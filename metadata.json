@@ -1,0 +1,6 @@
+{
+  "name": "RL RH Connect - Portal de Vagas",
+  "description": "Portal de Vagas completo do RL RH Connect com Candidatura Fácil, Banco de Talentos e Gestão de Recrutamento Empresarial Multiempresa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
