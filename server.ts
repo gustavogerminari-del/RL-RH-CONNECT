@@ -416,6 +416,26 @@ async function startServer() {
       publishedAt: jobData.publishedAt || new Date().toISOString(),
       documentRequirements: jobData.documentRequirements || [],
       customQuestions: jobData.customQuestions || [],
+      // Prompt 01 Extended Fields
+      origin: jobData.origin || 'vaga_interna',
+      department: jobData.department || jobData.area || '',
+      salaryRange: jobData.salaryRange || '',
+      recruiterName: jobData.recruiterName || '',
+      recruiterId: jobData.recruiterId || '',
+      managerName: jobData.managerName || '',
+      managerId: jobData.managerId || '',
+      centerCostCode: jobData.centerCostCode || '',
+      deadline: jobData.deadline || '',
+      clientId: jobData.clientId || '',
+      clientName: jobData.clientName || '',
+      billingRule: jobData.billingRule || '',
+      feePercent: jobData.feePercent ? Number(jobData.feePercent) : undefined,
+      negotiatedValue: jobData.negotiatedValue ? Number(jobData.negotiatedValue) : undefined,
+      paymentDeadline: jobData.paymentDeadline || '',
+      commercialResponsible: jobData.commercialResponsible || '',
+      paymentStatus: jobData.paymentStatus || 'Aguardando contratação',
+      commercialNotes: jobData.commercialNotes || '',
+      archived: jobData.archived || false,
       createdAt: jobData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -461,6 +481,63 @@ async function startServer() {
     });
 
     res.json({ applications: enriched });
+  });
+
+  // ADD EXISTING CANDIDATE FROM TALENT BANK TO JOB (NO CANDIDATE DUPLICATION)
+  app.post('/api/company/jobs/:jobId/add-candidate', (req, res) => {
+    const { jobId } = req.params;
+    const { candidateId, companyId, source } = req.body;
+
+    if (!jobId || !candidateId || !companyId) {
+      return res.status(400).json({ error: 'jobId, candidateId e companyId são obrigatórios.' });
+    }
+
+    const candidate = db.findCandidateById(candidateId);
+    if (!candidate) {
+      return res.status(404).json({ error: 'Candidato não encontrado.' });
+    }
+
+    const job = db.getJobById(jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'Vaga não encontrada.' });
+    }
+
+    // Check if candidate already has active application for this job
+    const existingApp = db.findActiveApplication(candidateId, jobId);
+    if (existingApp) {
+      return res.status(400).json({ error: 'Candidato já está inscrito nesta vaga.' });
+    }
+
+    const newApp: Application = {
+      id: `APP-${Date.now()}`,
+      candidateId: candidate.id,
+      jobId: job.id,
+      companyId: companyId,
+      stage: 'novo_candidato',
+      status: 'ativa',
+      origin: 'banco_de_talentos',
+      answers: {},
+      eliminatoryFailed: false,
+      bancoTalentos: true,
+      lgpdAceito: true,
+      lgpdAceitoEm: new Date().toISOString(),
+      lgpdPolicyVersion: 'v1.0',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    db.saveApplication(newApp);
+
+    db.addTimelineEvent({
+      id: `TL-${Date.now()}`,
+      applicationId: newApp.id,
+      title: 'Inscrição via Banco de Talentos IA',
+      description: `Candidato vinculado à vaga "${job.title}" a partir do Banco de Talentos IA.`,
+      author: 'Recrutador RH',
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({ success: true, application: newApp });
   });
 
   // COMPANY CANDIDATE SIDE DRAWER DATA

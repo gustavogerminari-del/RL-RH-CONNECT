@@ -88,11 +88,31 @@ export interface Job {
   locationDetails?: string;
   experienceLevel?: string;
   educationLevel?: string;
-  status: 'aberta' | 'encerrada' | 'pausada';
+  status: 'aberta' | 'encerrada' | 'pausada' | 'em_andamento' | 'concluida' | 'cancelada';
   published: boolean;
   publishedAt: string;
   documentRequirements: DocumentRequirementConfig[];
   customQuestions: CustomQuestion[];
+  // Prompt 01 Extended Fields
+  origin?: 'vaga_interna' | 'recrutamento_cliente' | 'headhunter';
+  department?: string;
+  salaryRange?: string;
+  recruiterName?: string;
+  recruiterId?: string;
+  managerName?: string;
+  managerId?: string;
+  centerCostCode?: string;
+  deadline?: string;
+  clientId?: string;
+  clientName?: string;
+  billingRule?: string;
+  feePercent?: number;
+  negotiatedValue?: number;
+  paymentDeadline?: string;
+  commercialResponsible?: string;
+  paymentStatus?: 'Aguardando contratação' | 'A faturar' | 'Faturado' | 'Recebido' | 'Vencido';
+  commercialNotes?: string;
+  archived?: boolean;
   createdAt: string;
   updatedAt: string;
 }
