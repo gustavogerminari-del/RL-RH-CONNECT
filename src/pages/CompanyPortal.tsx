@@ -21,11 +21,32 @@ import {
   Settings,
   ShieldAlert,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Clock,
+  DollarSign,
+  Gift,
+  Upload,
+  UserCheck,
+  Award,
+  TrendingUp,
+  LayoutDashboard
 } from 'lucide-react';
 import { CompanyUser, Company, Job, Application, Candidate, CandidateDocument } from '../types';
 import { CandidateSideDrawer } from '../components/CandidateSideDrawer';
 import { formatCPF, maskCPFForPrivacy } from '../utils/cpf';
+
+// Import Official Sub-Module Views
+import { CompanyDashboardView } from '../components/company/CompanyDashboardView';
+import { HeadhunterView } from '../components/company/HeadhunterView';
+import { BancoTalentosView } from '../components/company/BancoTalentosView';
+import { FuncionariosView } from '../components/company/FuncionariosView';
+import { DepartamentoPessoalView } from '../components/company/DepartamentoPessoalView';
+import { PontoDigitalView } from '../components/company/PontoDigitalView';
+import { FolhaPagamentoView } from '../components/company/FolhaPagamentoView';
+import { BeneficiosView } from '../components/company/BeneficiosView';
+import { CentralDocumentosView } from '../components/company/CentralDocumentosView';
+import { RelatoriosView } from '../components/company/RelatoriosView';
+import { IaRhView } from '../components/company/IaRhView';
 
 interface CompanyPortalProps {
   currentUser: CompanyUser | null;
@@ -46,8 +67,19 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
 
   // Active view inside Company Panel
   const [activeMenu, setActiveMenu] = useState<
-    'dashboard' | 'recrutamento' | 'vagas' | 'candidatos' | 'banco-de-talentos' | 'entrevistas' | 'relatorios' | 'configuracoes'
-  >('vagas');
+    | 'dashboard'
+    | 'vagas'
+    | 'headhunter'
+    | 'banco-de-talentos'
+    | 'funcionarios'
+    | 'departamento-pessoal'
+    | 'ponto-digital'
+    | 'folha-de-pagamento'
+    | 'beneficios'
+    | 'central-documentos'
+    | 'relatorios'
+    | 'ia-rh'
+  >('dashboard');
 
   // Jobs state
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -357,12 +389,20 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
 
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar Menu */}
-        <aside className="w-56 bg-white border-r border-slate-200 p-4 hidden md:flex flex-col space-y-1 text-xs shrink-0">
+        <aside className="w-64 bg-white border-r border-slate-200 p-3 hidden md:flex flex-col space-y-1 text-xs shrink-0 overflow-y-auto">
           {[
-            { id: 'vagas', label: 'Vagas & Candidatos', icon: Briefcase },
-            { id: 'banco-de-talentos', label: 'Banco de Talentos', icon: Users },
-            { id: 'entrevistas', label: 'Agenda de Entrevistas', icon: Calendar },
-            { id: 'relatorios', label: 'Relatórios & Métricas', icon: BarChart2 }
+            { id: 'dashboard', label: 'Dashboard Integrado', icon: LayoutDashboard },
+            { id: 'vagas', label: 'Recrutamento (ATS)', icon: Briefcase },
+            { id: 'headhunter', label: 'Módulo Headhunter', icon: Award },
+            { id: 'banco-de-talentos', label: 'Banco de Talentos', icon: UserCheck },
+            { id: 'funcionarios', label: 'Colaboradores Central', icon: Users },
+            { id: 'departamento-pessoal', label: 'Departamento Pessoal (DP)', icon: Building2 },
+            { id: 'ponto-digital', label: 'Ponto Digital & Espelho', icon: Clock },
+            { id: 'folha-de-pagamento', label: 'Folha de Pagamento', icon: DollarSign },
+            { id: 'beneficios', label: 'Benefícios & Incentivos', icon: Gift },
+            { id: 'central-documentos', label: 'Central Documental', icon: FileText },
+            { id: 'relatorios', label: 'Relatórios & Analytics', icon: BarChart2 },
+            { id: 'ia-rh', label: 'Assistente IA RH', icon: Sparkles }
           ].map(m => {
             const Icon = m.icon;
             return (
@@ -371,12 +411,12 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
                 onClick={() => setActiveMenu(m.id as any)}
                 className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl font-bold transition-all text-left ${
                   activeMenu === m.id
-                    ? 'bg-blue-600 text-white shadow-xs'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                <span>{m.label}</span>
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{m.label}</span>
               </button>
             );
           })}
@@ -384,14 +424,23 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
 
         {/* Main Content Area */}
         <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-          {/* MENU: VAGAS & CANDIDATOS POR VAGA */}
+          {/* MENU: DASHBOARD INTEGRADO */}
+          {activeMenu === 'dashboard' && (
+            <CompanyDashboardView
+              companyId={companyId}
+              companyName={currentCompany?.name || 'Empresa RL RH Connect'}
+              onNavigate={(menu) => setActiveMenu(menu as any)}
+            />
+          )}
+
+          {/* MENU: RECRUTAMENTO (ATS) VAGAS & CANDIDATOS */}
           {activeMenu === 'vagas' && (
             <div className="space-y-6">
               {/* Top Controls */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-                    Recrutamento → Candidatos por Vaga
+                    Recrutamento & Seleção (ATS) — Candidatos por Vaga
                   </h2>
                   <p className="text-xs text-slate-500">
                     Empresa: {currentCompany?.name || 'Visão Global Admin Master'}
@@ -438,7 +487,7 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
                 </div>
               </div>
 
-              {/* CANDIDATES TABLE / LIST VIEW (SECTION 29: COLUMNS) */}
+              {/* CANDIDATES TABLE / LIST VIEW */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
                 <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                   <h3 className="text-sm font-bold text-slate-900">
@@ -541,19 +590,57 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
             </div>
           )}
 
-          {/* OTHER MENUS: BANCO DE TALENTOS */}
+          {/* MENU: HEADHUNTER */}
+          {activeMenu === 'headhunter' && (
+            <HeadhunterView
+              companyId={companyId}
+              onOpenDrawer={(appId) => setDrawerAppId(appId)}
+            />
+          )}
+
+          {/* MENU: BANCO DE TALENTOS */}
           {activeMenu === 'banco-de-talentos' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold text-slate-900">Banco de Talentos Geral</h2>
-              <p className="text-xs text-slate-500">
-                Pesquise profissionais cadastrados que aceitaram disponibilizar seus perfis.
-              </p>
-              <div className="bg-white rounded-2xl p-6 border border-slate-200">
-                <p className="text-xs text-slate-600">
-                  Acesso ao repositório completo com busca de currículos e competências ativas.
-                </p>
-              </div>
-            </div>
+            <BancoTalentosView companyId={companyId} />
+          )}
+
+          {/* MENU: FUNCIONARIOS / COLABORADORES */}
+          {activeMenu === 'funcionarios' && (
+            <FuncionariosView companyId={companyId} />
+          )}
+
+          {/* MENU: DEPARTAMENTO PESSOAL (DP) */}
+          {activeMenu === 'departamento-pessoal' && (
+            <DepartamentoPessoalView companyId={companyId} />
+          )}
+
+          {/* MENU: PONTO DIGITAL */}
+          {activeMenu === 'ponto-digital' && (
+            <PontoDigitalView companyId={companyId} />
+          )}
+
+          {/* MENU: FOLHA DE PAGAMENTO */}
+          {activeMenu === 'folha-de-pagamento' && (
+            <FolhaPagamentoView companyId={companyId} />
+          )}
+
+          {/* MENU: BENEFICIOS */}
+          {activeMenu === 'beneficios' && (
+            <BeneficiosView companyId={companyId} />
+          )}
+
+          {/* MENU: CENTRAL DOCUMENTAL */}
+          {activeMenu === 'central-documentos' && (
+            <CentralDocumentosView companyId={companyId} />
+          )}
+
+          {/* MENU: RELATORIOS */}
+          {activeMenu === 'relatorios' && (
+            <RelatoriosView companyId={companyId} />
+          )}
+
+          {/* MENU: ASSISTENTE IA RH */}
+          {activeMenu === 'ia-rh' && (
+            <IaRhView companyId={companyId} />
           )}
         </main>
       </div>

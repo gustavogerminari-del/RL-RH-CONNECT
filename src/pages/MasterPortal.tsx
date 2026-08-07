@@ -1,19 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
+  Building2,
+  CreditCard,
+  FileSpreadsheet,
+  Wrench,
   Globe,
-  Settings,
-  Save,
+  Plus,
   CheckCircle2,
-  Phone,
-  Mail,
-  Linkedin,
-  Facebook,
-  Instagram,
-  FileText,
-  Sparkles
+  XCircle,
+  AlertTriangle,
+  RefreshCw,
+  Save,
+  DollarSign,
+  TrendingUp,
+  FileCheck,
+  QrCode,
+  ExternalLink,
+  Layers,
+  Settings2,
+  Lock,
+  Unlock,
+  Sliders,
+  Send,
+  Zap
 } from 'lucide-react';
-import { PortalSettings } from '../types';
+import {
+  PortalSettings,
+  SaaSPlan,
+  Subscription,
+  Invoice,
+  MasterBuilderConfig,
+  Company
+} from '../types';
 
 interface MasterPortalProps {
   settings?: PortalSettings;
@@ -21,7 +40,18 @@ interface MasterPortalProps {
 }
 
 export const MasterPortal: React.FC<MasterPortalProps> = ({ settings, onSaveSettings }) => {
-  const [form, setForm] = useState<PortalSettings>(
+  const [activeTab, setActiveTab] = useState<
+    'dashboard' | 'empresas' | 'planos' | 'financeiro' | 'construtor' | 'settings'
+  >('dashboard');
+
+  // State data from backend
+  const [plans, setPlans] = useState<SaaSPlan[]>([]);
+  const [subscriptionsData, setSubscriptionsData] = useState<
+    Array<{ company: Company; subscription: Subscription; jobsCount: number; applicationsCount: number }>
+  >([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [builderConfig, setBuilderConfig] = useState<MasterBuilderConfig | null>(null);
+  const [portalForm, setPortalForm] = useState<PortalSettings>(
     settings || {
       portalName: 'RL RH Connect',
       bannerTitle: 'Conectando talentos às melhores oportunidades',
@@ -44,61 +74,972 @@ export const MasterPortal: React.FC<MasterPortalProps> = ({ settings, onSaveSett
     }
   );
 
-  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSaveSettings(form);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+  // Modals & Forms
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [planForm, setPlanForm] = useState<Partial<SaaSPlan>>({
+    name: '',
+    description: '',
+    priceMonthly: 390,
+    priceAnnual: 3900,
+    maxJobs: 10,
+    maxUsers: 5,
+    maxCandidates: 1000,
+    features: ['Vagas ilimitadas no portal', 'IA Fit Scoring', 'Suporte WhatsApp'],
+    active: true
+  });
+
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invoiceForm, setInvoiceForm] = useState({
+    companyId: '',
+    planId: '',
+    billingCycle: 'mensal' as 'mensal' | 'anual',
+    paymentMethod: 'pix' as 'pix' | 'cartao_credito' | 'boleto'
+  });
+
+  const [selectedInvoiceForQr, setSelectedInvoiceForQr] = useState<Invoice | null>(null);
+
+  // Load all master data
+  const loadMasterData = async () => {
+    setLoading(true);
+    try {
+      const [resPlans, resSubs, resInvoices, resBuilder] = await Promise.all([
+        fetch('/api/master/plans').then(r => r.json()),
+        fetch('/api/master/subscriptions').then(r => r.json()),
+        fetch('/api/master/invoices').then(r => r.json()),
+        fetch('/api/master/builder').then(r => r.json())
+      ]);
+
+      if (resPlans.plans) setPlans(resPlans.plans);
+      if (resSubs.subscriptions) setSubscriptionsData(resSubs.subscriptions);
+      if (resInvoices.invoices) setInvoices(resInvoices.invoices);
+      if (resBuilder.config) setBuilderConfig(resBuilder.config);
+    } catch (e) {
+      console.error('Error loading master data:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => {
+    loadMasterData();
+  }, []);
+
+  const notify = (text: string, type: 'success' | 'error' = 'success') => {
+    setStatusMessage({ type, text });
+    setTimeout(() => setStatusMessage(null), 4000);
+  };
+
+  // Actions
+  const handleSaveSaaSPlan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/master/plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: planForm })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        notify('Plano SaaS salvo com sucesso!');
+        setShowPlanModal(false);
+        loadMasterData();
+      } else {
+        notify(data.error || 'Erro ao salvar plano', 'error');
+      }
+    } catch (e: any) {
+      notify(e.message, 'error');
+    }
+  };
+
+  const handleToggleCompanyStatus = async (companyId: string, currentActive: boolean) => {
+    try {
+      const res = await fetch('/api/master/subscriptions/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, active: !currentActive })
+      });
+      if (res.ok) {
+        notify(`Status da empresa alterado para ${!currentActive ? 'Ativo' : 'Bloqueado'}. (Dados preservados).`);
+        loadMasterData();
+      }
+    } catch (e: any) {
+      notify(e.message, 'error');
+    }
+  };
+
+  const handleCreateInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invoiceForm.companyId) {
+      notify('Selecione uma empresa.', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/api/master/invoices/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(invoiceForm)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        notify('Cobrança gerada com sucesso via Mercado Pago!');
+        setShowInvoiceModal(false);
+        setSelectedInvoiceForQr(data.invoice);
+        loadMasterData();
+      } else {
+        notify(data.error || 'Erro ao gerar cobrança', 'error');
+      }
+    } catch (e: any) {
+      notify(e.message, 'error');
+    }
+  };
+
+  const handleIssueNfe = async (invoiceId: string) => {
+    try {
+      const res = await fetch(`/api/master/invoices/${invoiceId}/issue-nfe`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        notify(data.message || 'NFS-e emitida com sucesso!');
+        loadMasterData();
+      } else {
+        notify(data.error || 'Falha ao emitir NFS-e', 'error');
+      }
+    } catch (e: any) {
+      notify(e.message, 'error');
+    }
+  };
+
+  const handleSimulateWebhook = async (paymentId: string) => {
+    try {
+      const res = await fetch('/api/webhooks/mercadopago', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'payment.created',
+          type: 'payment',
+          data: { id: paymentId || 'MP-PAY-SIMULATED-99' }
+        })
+      });
+      const data = await res.json();
+      notify(`Webhook simulado: ${data.message}`);
+      loadMasterData();
+    } catch (e: any) {
+      notify(e.message, 'error');
+    }
+  };
+
+  const handleSaveBuilderConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!builderConfig) return;
+    try {
+      const res = await fetch('/api/master/builder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: builderConfig })
+      });
+      if (res.ok) {
+        notify('Configurações do Construtor Master salvas!');
+        loadMasterData();
+      }
+    } catch (e: any) {
+      notify(e.message, 'error');
+    }
+  };
+
+  const handleSavePortalSettingsForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSaveSettings(portalForm);
+    notify('Configurações visuais do Portal de Vagas salvas no sistema!');
+  };
+
+  // Metrics
+  const totalMRR = subscriptionsData
+    .filter(s => s.subscription.status === 'ativa')
+    .reduce((acc, curr) => acc + (curr.subscription.price || 0), 0);
+
+  const activeSubsCount = subscriptionsData.filter(s => s.subscription.status === 'ativa').length;
+  const overdueSubsCount = subscriptionsData.filter(s => s.subscription.status === 'atrasada').length;
+  const nfeIssuedCount = invoices.filter(i => i.nfeStatus === 'emitida').length;
+
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6 text-xs text-slate-900">
-      <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white rounded-2xl p-6 shadow-md flex items-center justify-between">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6 text-xs text-slate-900">
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center space-x-2">
-            <ShieldCheck className="w-6 h-6 text-amber-300" />
-            <h2 className="text-xl font-bold">MASTER → Configuração do Portal de Vagas</h2>
+            <ShieldCheck className="w-7 h-7 text-amber-400" />
+            <h1 className="text-xl font-black tracking-tight">RL RH Connect — Painel Master SaaS</h1>
           </div>
           <p className="text-blue-200">
-            Personalize a identidade visual, SEO, dados de contato e políticas globais do RL RH Connect.
+            Módulo de Administração Global: Gestão de Empresas, Assinaturas, Mercado Pago, NFS-e e Construtor Interno.
           </p>
         </div>
+
+        <button
+          onClick={loadMasterData}
+          disabled={loading}
+          className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl border border-white/20 transition flex items-center space-x-2 text-xs"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <span>Sincronizar Dados</span>
+        </button>
       </div>
 
-      {savedSuccess && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl font-bold flex items-center space-x-2">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-          <span>Configurações do Portal atualizadas com sucesso e salvas no sistema!</span>
+      {statusMessage && (
+        <div
+          className={`p-4 rounded-2xl font-bold flex items-center space-x-3 shadow-md ${
+            statusMessage.type === 'success'
+              ? 'bg-emerald-50 border border-emerald-300 text-emerald-900'
+              : 'bg-rose-50 border border-rose-300 text-rose-900'
+          }`}
+        >
+          {statusMessage.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+          )}
+          <span>{statusMessage.text}</span>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Identidade e Banner */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-2xs space-y-4">
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          className={`px-4 py-2.5 rounded-xl font-bold transition flex items-center space-x-2 whitespace-nowrap ${
+            activeTab === 'dashboard'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white border text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4" />
+          <span>Visão Geral & Métricas</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('empresas')}
+          className={`px-4 py-2.5 rounded-xl font-bold transition flex items-center space-x-2 whitespace-nowrap ${
+            activeTab === 'empresas'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white border text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          <span>Empresas & Assinaturas ({subscriptionsData.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('planos')}
+          className={`px-4 py-2.5 rounded-xl font-bold transition flex items-center space-x-2 whitespace-nowrap ${
+            activeTab === 'planos'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white border text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <CreditCard className="w-4 h-4" />
+          <span>Planos & Preços ({plans.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('financeiro')}
+          className={`px-4 py-2.5 rounded-xl font-bold transition flex items-center space-x-2 whitespace-nowrap ${
+            activeTab === 'financeiro'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white border text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Cobranças & NFS-e ({invoices.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('construtor')}
+          className={`px-4 py-2.5 rounded-xl font-bold transition flex items-center space-x-2 whitespace-nowrap ${
+            activeTab === 'construtor'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white border text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <Wrench className="w-4 h-4" />
+          <span>Construtor Master</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-4 py-2.5 rounded-xl font-bold transition flex items-center space-x-2 whitespace-nowrap ${
+            activeTab === 'settings'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white border text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <Globe className="w-4 h-4" />
+          <span>Visual do Portal de Vagas</span>
+        </button>
+      </div>
+
+      {/* TAB 1: VISÃO GERAL & METRICAS */}
+      {activeTab === 'dashboard' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="font-semibold text-xs">MRR (Receita Recorrente)</span>
+                <DollarSign className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900">
+                R$ {totalMRR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </div>
+              <p className="text-[10px] text-slate-500">Calculado sobre assinaturas ativas</p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="font-semibold text-xs">Empresas Ativas</span>
+                <Building2 className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900">{activeSubsCount}</div>
+              <p className="text-[10px] text-slate-500">{overdueSubsCount} pendentes/atrasadas</p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="font-semibold text-xs">Faturas Processadas</span>
+                <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900">{invoices.length}</div>
+              <p className="text-[10px] text-slate-500">
+                {invoices.filter(i => i.status === 'paga').length} pagas no sistema
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="font-semibold text-xs">NFS-e Emitidas</span>
+                <FileCheck className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900">{nfeIssuedCount}</div>
+              <p className="text-[10px] text-slate-500">Emissão automática e idempotente</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <h3 className="font-bold text-sm text-slate-900 flex items-center space-x-2">
+                <Zap className="w-4 h-4 text-amber-500" />
+                <span>Ações Rápidas do Administrador Master</span>
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() => setShowInvoiceModal(true)}
+                  className="p-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-xl font-bold text-left hover:bg-blue-100 transition flex items-center space-x-2"
+                >
+                  <Plus className="w-4 h-4 text-blue-600" />
+                  <span>Gerar Cobrança MP</span>
+                </button>
+
+                <button
+                  onClick={() => setShowPlanModal(true)}
+                  className="p-3 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl font-bold text-left hover:bg-indigo-100 transition flex items-center space-x-2"
+                >
+                  <CreditCard className="w-4 h-4 text-indigo-600" />
+                  <span>Criar Novo Plano</span>
+                </button>
+
+                <button
+                  onClick={() => handleSimulateWebhook('MP-PAY-TEST-001')}
+                  className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl font-bold text-left hover:bg-emerald-100 transition flex items-center space-x-2"
+                >
+                  <Send className="w-4 h-4 text-emerald-600" />
+                  <span>Simular Webhook MP</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('construtor')}
+                  className="p-3 bg-purple-50 border border-purple-200 text-purple-900 rounded-xl font-bold text-left hover:bg-purple-100 transition flex items-center space-x-2"
+                >
+                  <Wrench className="w-4 h-4 text-purple-600" />
+                  <span>Construtor Interno</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <h3 className="font-bold text-sm text-slate-900 flex items-center space-x-2">
+                <Layers className="w-4 h-4 text-blue-600" />
+                <span>Visão de Assinaturas por Empresa</span>
+              </h3>
+
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {subscriptionsData.map(({ company, subscription, jobsCount }) => (
+                  <div
+                    key={company.id}
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="font-bold block text-slate-900">{company.name}</span>
+                      <span className="text-[10px] text-slate-500">
+                        Plano: {subscription.planName} • Vagas abertas: {jobsCount}
+                      </span>
+                    </div>
+
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                        subscription.status === 'ativa'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}
+                    >
+                      {subscription.status.toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: EMPRESAS & ASSINATURAS */}
+      {activeTab === 'empresas' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Gestão Multissociedade / Empresas Cadastradas</h3>
+              <p className="text-slate-500 text-[11px]">
+                Monitore o uso das empresas, altere planos, bloqueie acessos (sem jamais excluir dados históricos).
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b bg-slate-50 text-slate-700 font-bold">
+                  <th className="p-3">Empresa / CNPJ</th>
+                  <th className="p-3">Plano Atual</th>
+                  <th className="p-3">Status Assinatura</th>
+                  <th className="p-3">Vencimento</th>
+                  <th className="p-3">Vagas</th>
+                  <th className="p-3">Ações Master</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {subscriptionsData.map(({ company, subscription, jobsCount }) => (
+                  <tr key={company.id} className="hover:bg-slate-50">
+                    <td className="p-3 font-semibold">
+                      <div className="font-bold text-slate-900">{company.name}</div>
+                      <div className="text-[10px] text-slate-500">{company.cnpj || 'CNPJ não informado'}</div>
+                    </td>
+
+                    <td className="p-3">
+                      <span className="font-bold text-blue-700">{subscription.planName}</span>
+                      <div className="text-[10px] text-slate-500">
+                        R$ {subscription.price}/mês ({subscription.billingCycle})
+                      </div>
+                    </td>
+
+                    <td className="p-3">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-block ${
+                          company.active && subscription.status === 'ativa'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        {company.active ? subscription.status.toUpperCase() : 'BLOQUEADA'}
+                      </span>
+                    </td>
+
+                    <td className="p-3 text-slate-600">
+                      {new Date(subscription.nextBillingDate).toLocaleDateString('pt-BR')}
+                    </td>
+
+                    <td className="p-3 font-bold text-slate-900">{jobsCount} vagas</td>
+
+                    <td className="p-3 space-x-2">
+                      <button
+                        onClick={() => handleToggleCompanyStatus(company.id, company.active)}
+                        className={`px-3 py-1.5 rounded-lg font-bold text-[11px] border transition flex items-center space-x-1 ${
+                          company.active
+                            ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                        }`}
+                      >
+                        {company.active ? (
+                          <>
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Bloquear</span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="w-3.5 h-3.5" />
+                            <span>Ativar</span>
+                          </>
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: PLANOS & PREÇOS */}
+      {activeTab === 'planos' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
+            <div>
+              <h3 className="font-bold text-sm">Planos de Assinatura SaaS</h3>
+              <p className="text-slate-500 text-[11px]">Gerencie limites de vagas, usuários e precificação.</p>
+            </div>
+            <button
+              onClick={() => setShowPlanModal(true)}
+              className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition flex items-center space-x-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Criar Novo Plano</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {plans.map(p => (
+              <div
+                key={p.id}
+                className={`bg-white rounded-2xl p-6 border shadow-2xs space-y-4 flex flex-col justify-between relative ${
+                  p.popular ? 'border-2 border-blue-600' : 'border-slate-200'
+                }`}
+              >
+                {p.popular && (
+                  <span className="absolute -top-3 right-4 bg-blue-600 text-white font-bold text-[10px] px-3 py-1 rounded-full uppercase">
+                    Mais Vendido
+                  </span>
+                )}
+
+                <div className="space-y-2">
+                  <h4 className="text-base font-extrabold text-slate-900">{p.name}</h4>
+                  <p className="text-slate-500 text-xs min-h-[36px]">{p.description}</p>
+
+                  <div className="pt-2">
+                    <span className="text-2xl font-black text-slate-900">R$ {p.priceMonthly}</span>
+                    <span className="text-slate-500 font-semibold"> / mês</span>
+                  </div>
+
+                  <div className="text-[11px] text-slate-600 font-medium">
+                    Opção Anual: R$ {p.priceAnnual}/ano
+                  </div>
+
+                  <div className="border-t pt-3 space-y-1.5 text-[11px]">
+                    <div className="flex justify-between font-bold">
+                      <span>Limite de Vagas:</span>
+                      <span className="text-blue-700">{p.maxJobs === -1 ? 'Ilimitado' : `${p.maxJobs} vagas`}</span>
+                    </div>
+
+                    <div className="flex justify-between font-bold">
+                      <span>Limite de Usuários:</span>
+                      <span className="text-blue-700">{p.maxUsers} recrutadores</span>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-3 space-y-1">
+                    <span className="font-bold text-[10px] uppercase tracking-wider text-slate-400">Recursos:</span>
+                    <ul className="space-y-1 text-slate-700">
+                      {p.features.map((feat, idx) => (
+                        <li key={idx} className="flex items-center space-x-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                          <span>{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t flex justify-end">
+                  <button
+                    onClick={() => {
+                      setPlanForm(p);
+                      setShowPlanModal(true);
+                    }}
+                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold rounded-xl text-center"
+                  >
+                    Editar Plano
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: COBRANÇAS & NFS-e */}
+      {activeTab === 'financeiro' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Gestão de Cobranças Mercado Pago & Emissão de NFS-e</h3>
+              <p className="text-slate-500 text-[11px]">
+                Acompanhe liquidações, emita Notas Fiscais de Serviço e simule notificações de webhook.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowInvoiceModal(true)}
+              className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition flex items-center space-x-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Gerar Cobrança MP</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b bg-slate-50 font-bold text-slate-700">
+                  <th className="p-3">Fatura / Empresa</th>
+                  <th className="p-3">Valor</th>
+                  <th className="p-3">Método</th>
+                  <th className="p-3">Status Pagamento</th>
+                  <th className="p-3">Nota Fiscal (NFS-e)</th>
+                  <th className="p-3">Ações Fiscal / Webhook</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {invoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-slate-50">
+                    <td className="p-3">
+                      <div className="font-bold text-slate-900">{inv.id}</div>
+                      <div className="text-[10px] text-slate-500">{inv.companyName}</div>
+                    </td>
+
+                    <td className="p-3 font-bold text-slate-900">
+                      R$ {inv.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+
+                    <td className="p-3 font-semibold uppercase text-slate-700">{inv.paymentMethod}</td>
+
+                    <td className="p-3">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          inv.status === 'paga'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {inv.status.toUpperCase()}
+                      </span>
+                    </td>
+
+                    <td className="p-3">
+                      {inv.nfeStatus === 'emitida' ? (
+                        <div className="space-y-0.5">
+                          <span className="font-bold text-emerald-700 flex items-center space-x-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{inv.nfeNumber}</span>
+                          </span>
+                          <span className="text-[10px] text-slate-400 block truncate max-w-[150px]">
+                            Chave: {inv.nfeKey}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 font-semibold italic">Pendente emissão</span>
+                      )}
+                    </td>
+
+                    <td className="p-3 space-x-2">
+                      {inv.status === 'paga' && inv.nfeStatus !== 'emitida' && (
+                        <button
+                          onClick={() => handleIssueNfe(inv.id)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition"
+                        >
+                          Emitir NFS-e
+                        </button>
+                      )}
+
+                      {inv.status === 'paga' && inv.nfeStatus === 'emitida' && (
+                        <button
+                          onClick={() => handleIssueNfe(inv.id)}
+                          title="Testa a idempotência garantindo que não emite duplicado"
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg border"
+                        >
+                          Verificar Idempotência
+                        </button>
+                      )}
+
+                      {inv.status === 'pendente' && (
+                        <button
+                          onClick={() => handleSimulateWebhook(inv.mercadopagoPaymentId || 'MP-PAY-SIM-99')}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg transition"
+                        >
+                          Simular Baixa
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: CONSTRUTOR MASTER INTERNO */}
+      {activeTab === 'construtor' && builderConfig && (
+        <form onSubmit={handleSaveBuilderConfig} className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+            <h3 className="font-bold text-sm border-b pb-2 text-slate-900 flex items-center space-x-2">
+              <Sliders className="w-4 h-4 text-blue-600" />
+              <span>1. Módulos & Recursos Habilitados na Plataforma</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {Object.entries(builderConfig.menuModules).map(([key, value]) => (
+                <label
+                  key={key}
+                  className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between cursor-pointer hover:bg-slate-100 transition"
+                >
+                  <span className="font-bold text-slate-800 capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
+                  <input
+                    type="checkbox"
+                    checked={value}
+                    onChange={e =>
+                      setBuilderConfig(prev =>
+                        prev
+                          ? {
+                              ...prev,
+                              menuModules: { ...prev.menuModules, [key]: e.target.checked }
+                            }
+                          : null
+                      )
+                    }
+                    className="w-4 h-4 text-blue-600 rounded"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Mercado Pago Integration */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+            <h3 className="font-bold text-sm border-b pb-2 text-slate-900 flex items-center space-x-2">
+              <CreditCard className="w-4 h-4 text-emerald-600" />
+              <span>2. Integração com Mercado Pago (PIX, Cartão & Boleto)</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block font-semibold mb-1">Access Token do Mercado Pago</label>
+                <input
+                  type="text"
+                  value={builderConfig.mercadopagoConfig.accessToken}
+                  onChange={e =>
+                    setBuilderConfig(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            mercadopagoConfig: { ...prev.mercadopagoConfig, accessToken: e.target.value }
+                          }
+                        : null
+                    )
+                  }
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Public Key do Mercado Pago</label>
+                <input
+                  type="text"
+                  value={builderConfig.mercadopagoConfig.publicKey}
+                  onChange={e =>
+                    setBuilderConfig(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            mercadopagoConfig: { ...prev.mercadopagoConfig, publicKey: e.target.value }
+                          }
+                        : null
+                    )
+                  }
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                />
+              </div>
+
+              <div className="flex items-center space-x-4 pt-6">
+                <label className="flex items-center space-x-2 cursor-pointer font-bold">
+                  <input
+                    type="checkbox"
+                    checked={builderConfig.mercadopagoConfig.sandboxMode}
+                    onChange={e =>
+                      setBuilderConfig(prev =>
+                        prev
+                          ? {
+                              ...prev,
+                              mercadopagoConfig: { ...prev.mercadopagoConfig, sandboxMode: e.target.checked }
+                            }
+                          : null
+                      )
+                    }
+                    className="w-4 h-4 rounded"
+                  />
+                  <span>Modo Sandbox (Testes)</span>
+                </label>
+
+                <label className="flex items-center space-x-2 cursor-pointer font-bold">
+                  <input
+                    type="checkbox"
+                    checked={builderConfig.mercadopagoConfig.autoNfeOnPayment}
+                    onChange={e =>
+                      setBuilderConfig(prev =>
+                        prev
+                          ? {
+                              ...prev,
+                              mercadopagoConfig: { ...prev.mercadopagoConfig, autoNfeOnPayment: e.target.checked }
+                            }
+                          : null
+                      )
+                    }
+                    className="w-4 h-4 rounded"
+                  />
+                  <span>Emitir NFS-e Automaticamente ao Confirmar Pagamento</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Provedor NFS-e Fiscal */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+            <h3 className="font-bold text-sm border-b pb-2 text-slate-900 flex items-center space-x-2">
+              <FileCheck className="w-4 h-4 text-amber-600" />
+              <span>3. Provedor de Emissão de NFS-e (Fiscal)</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-semibold mb-1">Provedor NFS-e</label>
+                <select
+                  value={builderConfig.nfeProviderConfig.providerName}
+                  onChange={e =>
+                    setBuilderConfig(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            nfeProviderConfig: {
+                              ...prev.nfeProviderConfig,
+                              providerName: e.target.value as any
+                            }
+                          }
+                        : null
+                    )
+                  }
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                >
+                  <option value="e-Notas">e-Notas API</option>
+                  <option value="Focus NFe">Focus NFe API</option>
+                  <option value="NFe.io">NFe.io API</option>
+                  <option value="Prefeitura Direta">Prefeitura Direta (Abrasf)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Chave API / Secret do Provedor</label>
+                <input
+                  type="text"
+                  value={builderConfig.nfeProviderConfig.apiKey}
+                  onChange={e =>
+                    setBuilderConfig(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            nfeProviderConfig: { ...prev.nfeProviderConfig, apiKey: e.target.value }
+                          }
+                        : null
+                    )
+                  }
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">CNPJ do Emissor Master</label>
+                <input
+                  type="text"
+                  value={builderConfig.nfeProviderConfig.companyCnpj}
+                  onChange={e =>
+                    setBuilderConfig(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            nfeProviderConfig: { ...prev.nfeProviderConfig, companyCnpj: e.target.value }
+                          }
+                        : null
+                    )
+                  }
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Código de Serviço Municipal</label>
+                <input
+                  type="text"
+                  value={builderConfig.nfeProviderConfig.serviceCode}
+                  onChange={e =>
+                    setBuilderConfig(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            nfeProviderConfig: { ...prev.nfeProviderConfig, serviceCode: e.target.value }
+                          }
+                        : null
+                    )
+                  }
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition flex items-center space-x-2 text-xs"
+            >
+              <Save className="w-4 h-4" />
+              <span>Salvar Construtor Master</span>
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* TAB 6: CONFIGURAÇÕES VISUAIS DO PORTAL */}
+      {activeTab === 'settings' && (
+        <form onSubmit={handleSavePortalSettingsForm} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
           <h3 className="text-sm font-bold border-b pb-2 text-slate-900">
-            1. Identidade & Banner Principal
+            Identidade, Banner, Contatos e LGPD do Portal de Vagas
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-semibold mb-1">Nome do Portal</label>
+              <label className="block font-semibold mb-1">Nome do Portal Público</label>
               <input
                 type="text"
-                value={form.portalName}
-                onChange={e => setForm(prev => ({ ...prev, portalName: e.target.value }))}
+                value={portalForm.portalName}
+                onChange={e => setPortalForm(prev => ({ ...prev, portalName: e.target.value }))}
                 className="w-full p-2.5 bg-slate-50 border rounded-xl"
               />
             </div>
 
             <div>
-              <label className="block font-semibold mb-1">URL da Logo</label>
+              <label className="block font-semibold mb-1">E-mail de Suporte</label>
               <input
-                type="text"
-                placeholder="https://..."
-                value={form.logoUrl || ''}
-                onChange={e => setForm(prev => ({ ...prev, logoUrl: e.target.value }))}
+                type="email"
+                value={portalForm.emailContact}
+                onChange={e => setPortalForm(prev => ({ ...prev, emailContact: e.target.value }))}
                 className="w-full p-2.5 bg-slate-50 border rounded-xl"
               />
             </div>
@@ -107,8 +1048,8 @@ export const MasterPortal: React.FC<MasterPortalProps> = ({ settings, onSaveSett
               <label className="block font-semibold mb-1">Título do Banner Principal</label>
               <input
                 type="text"
-                value={form.bannerTitle}
-                onChange={e => setForm(prev => ({ ...prev, bannerTitle: e.target.value }))}
+                value={portalForm.bannerTitle}
+                onChange={e => setPortalForm(prev => ({ ...prev, bannerTitle: e.target.value }))}
                 className="w-full p-2.5 bg-slate-50 border rounded-xl"
               />
             </div>
@@ -117,102 +1058,238 @@ export const MasterPortal: React.FC<MasterPortalProps> = ({ settings, onSaveSett
               <label className="block font-semibold mb-1">Subtítulo do Banner</label>
               <textarea
                 rows={2}
-                value={form.bannerSubtitle}
-                onChange={e => setForm(prev => ({ ...prev, bannerSubtitle: e.target.value }))}
+                value={portalForm.bannerSubtitle}
+                onChange={e => setPortalForm(prev => ({ ...prev, bannerSubtitle: e.target.value }))}
                 className="w-full p-2.5 bg-slate-50 border rounded-xl"
               />
             </div>
           </div>
-        </div>
 
-        {/* Contato e Redes Sociais */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-2xs space-y-4">
-          <h3 className="text-sm font-bold border-b pb-2 text-slate-900">
-            2. Canais de Contato & Redes Sociais
-          </h3>
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition flex items-center space-x-2 text-xs"
+            >
+              <Save className="w-4 h-4" />
+              <span>Salvar Alterações do Portal</span>
+            </button>
+          </div>
+        </form>
+      )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block font-semibold mb-1">WhatsApp de Suporte</label>
-              <input
-                type="text"
-                value={form.whatsappContact}
-                onChange={e => setForm(prev => ({ ...prev, whatsappContact: e.target.value }))}
-                className="w-full p-2.5 bg-slate-50 border rounded-xl"
-              />
-            </div>
+      {/* MODAL CRIAR/EDITAR PLANO */}
+      {showPlanModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900">
+              {planForm.id ? 'Editar Plano SaaS' : 'Criar Novo Plano SaaS'}
+            </h3>
 
-            <div>
-              <label className="block font-semibold mb-1">E-mail de Atendimento</label>
-              <input
-                type="email"
-                value={form.emailContact}
-                onChange={e => setForm(prev => ({ ...prev, emailContact: e.target.value }))}
-                className="w-full p-2.5 bg-slate-50 border rounded-xl"
-              />
-            </div>
+            <form onSubmit={handleSaveSaaSPlan} className="space-y-3">
+              <div>
+                <label className="block font-semibold mb-1">Nome do Plano</label>
+                <input
+                  type="text"
+                  required
+                  value={planForm.name || ''}
+                  onChange={e => setPlanForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                />
+              </div>
 
-            <div>
-              <label className="block font-semibold mb-1">LinkedIn URL</label>
-              <input
-                type="text"
-                value={form.linkedinUrl || ''}
-                onChange={e => setForm(prev => ({ ...prev, linkedinUrl: e.target.value }))}
-                className="w-full p-2.5 bg-slate-50 border rounded-xl"
-              />
-            </div>
+              <div>
+                <label className="block font-semibold mb-1">Descrição Curta</label>
+                <input
+                  type="text"
+                  value={planForm.description || ''}
+                  onChange={e => setPlanForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                />
+              </div>
 
-            <div>
-              <label className="block font-semibold mb-1">Instagram URL</label>
-              <input
-                type="text"
-                value={form.instagramUrl || ''}
-                onChange={e => setForm(prev => ({ ...prev, instagramUrl: e.target.value }))}
-                className="w-full p-2.5 bg-slate-50 border rounded-xl"
-              />
-            </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Preço Mensal (R$)</label>
+                  <input
+                    type="number"
+                    value={planForm.priceMonthly || 0}
+                    onChange={e => setPlanForm(prev => ({ ...prev, priceMonthly: Number(e.target.value) }))}
+                    className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Preço Anual (R$)</label>
+                  <input
+                    type="number"
+                    value={planForm.priceAnnual || 0}
+                    onChange={e => setPlanForm(prev => ({ ...prev, priceAnnual: Number(e.target.value) }))}
+                    className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Limite de Vagas (-1 = ilimitado)</label>
+                  <input
+                    type="number"
+                    value={planForm.maxJobs || 5}
+                    onChange={e => setPlanForm(prev => ({ ...prev, maxJobs: Number(e.target.value) }))}
+                    className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Limite de Usuários Recrutadores</label>
+                  <input
+                    type="number"
+                    value={planForm.maxUsers || 2}
+                    onChange={e => setPlanForm(prev => ({ ...prev, maxUsers: Number(e.target.value) }))}
+                    className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowPlanModal(false)}
+                  className="px-4 py-2 border rounded-xl font-bold"
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold">
+                  Salvar Plano
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-        {/* Políticas LGPD e SEO */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-2xs space-y-4">
-          <h3 className="text-sm font-bold border-b pb-2 text-slate-900">
-            3. Política de Privacidade, Termos e SEO
-          </h3>
+      {/* MODAL GERAR COBRANÇA */}
+      {showInvoiceModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900">Gerar Cobrança via Mercado Pago</h3>
 
-          <div className="space-y-3">
-            <div>
-              <label className="block font-semibold mb-1">Texto da Política de Privacidade (LGPD)</label>
-              <textarea
-                rows={3}
-                value={form.privacyPolicyText}
-                onChange={e => setForm(prev => ({ ...prev, privacyPolicyText: e.target.value }))}
-                className="w-full p-2.5 bg-slate-50 border rounded-xl"
-              />
-            </div>
+            <form onSubmit={handleCreateInvoice} className="space-y-3">
+              <div>
+                <label className="block font-semibold mb-1">Empresa Contratante</label>
+                <select
+                  required
+                  value={invoiceForm.companyId}
+                  onChange={e => setInvoiceForm(prev => ({ ...prev, companyId: e.target.value }))}
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                >
+                  <option value="">Selecione uma empresa...</option>
+                  {subscriptionsData.map(s => (
+                    <option key={s.company.id} value={s.company.id}>
+                      {s.company.name} ({s.company.cnpj || 'Sem CNPJ'})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <label className="block font-semibold mb-1">Texto dos Termos de Uso</label>
-              <textarea
-                rows={3}
-                value={form.termsOfUseText}
-                onChange={e => setForm(prev => ({ ...prev, termsOfUseText: e.target.value }))}
-                className="w-full p-2.5 bg-slate-50 border rounded-xl"
-              />
-            </div>
+              <div>
+                <label className="block font-semibold mb-1">Plano SaaS</label>
+                <select
+                  required
+                  value={invoiceForm.planId}
+                  onChange={e => setInvoiceForm(prev => ({ ...prev, planId: e.target.value }))}
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                >
+                  <option value="">Selecione o plano...</option>
+                  {plans.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — R$ {p.priceMonthly}/mês
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Periodicidade</label>
+                  <select
+                    value={invoiceForm.billingCycle}
+                    onChange={e => setInvoiceForm(prev => ({ ...prev, billingCycle: e.target.value as any }))}
+                    className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                  >
+                    <option value="mensal">Mensal</option>
+                    <option value="anual">Anual</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Forma de Pagamento</label>
+                  <select
+                    value={invoiceForm.paymentMethod}
+                    onChange={e => setInvoiceForm(prev => ({ ...prev, paymentMethod: e.target.value as any }))}
+                    className="w-full p-2.5 bg-slate-50 border rounded-xl"
+                  >
+                    <option value="pix">PIX Instântaneo</option>
+                    <option value="boleto">Boleto Bancário</option>
+                    <option value="cartao_credito">Cartão de Crédito</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowInvoiceModal(false)}
+                  className="px-4 py-2 border rounded-xl font-bold"
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold">
+                  Gerar Cobrança
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-        <div className="flex justify-end pt-2">
-          <button
-            type="submit"
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-colors flex items-center space-x-2 text-xs"
-          >
-            <Save className="w-4 h-4" />
-            <span>Salvar Alterações Master</span>
-          </button>
+      {/* MODAL QR CODE PIX / FATURA GERADA */}
+      {selectedInvoiceForQr && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center">
+            <h3 className="text-base font-bold text-slate-900">Cobrança Gerada — Mercado Pago</h3>
+            <p className="text-slate-500 text-xs">{selectedInvoiceForQr.companyName}</p>
+
+            <div className="p-4 bg-slate-50 border rounded-2xl space-y-2">
+              <div className="text-2xl font-black text-slate-900">
+                R$ {selectedInvoiceForQr.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </div>
+              <span className="px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold inline-block">
+                AGUARDANDO PAGAMENTO
+              </span>
+            </div>
+
+            {selectedInvoiceForQr.pixQrCode && (
+              <div className="space-y-2">
+                <p className="font-bold text-xs text-slate-700">Copia e Cola PIX:</p>
+                <textarea
+                  readOnly
+                  rows={3}
+                  value={selectedInvoiceForQr.pixQrCode}
+                  className="w-full text-[10px] font-mono p-2 bg-slate-100 border rounded-xl text-slate-700"
+                />
+              </div>
+            )}
+
+            <button
+              onClick={() => setSelectedInvoiceForQr(null)}
+              className="w-full py-2.5 bg-blue-600 text-white font-bold rounded-xl"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
-      </form>
+      )}
     </div>
   );
 };

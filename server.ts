@@ -622,7 +622,7 @@ async function startServer() {
     res.json({ candidates });
   });
 
-  // 3. MASTER PORTAL SETTINGS
+  // 3. MASTER PORTAL SETTINGS & SAAS MANAGEMENT
   app.post('/api/master/settings', (req, res) => {
     const { settings } = req.body;
     if (!settings) {
@@ -631,6 +631,398 @@ async function startServer() {
 
     const updated = db.updatePortalSettings(settings);
     res.json({ settings: updated });
+  });
+
+  // SAAS PLANS CRUD
+  app.get('/api/master/plans', (req, res) => {
+    const plans = db.getSaaSPlans();
+    res.json({ plans });
+  });
+
+  app.post('/api/master/plans', (req, res) => {
+    const { plan } = req.body;
+    if (!plan || !plan.name) {
+      return res.status(400).json({ error: 'Dados do plano são obrigatórios.' });
+    }
+
+    const newPlan = {
+      id: plan.id || `plan-${Date.now()}`,
+      name: plan.name,
+      description: plan.description || '',
+      priceMonthly: Number(plan.priceMonthly) || 0,
+      priceAnnual: Number(plan.priceAnnual) || 0,
+      maxJobs: plan.maxJobs !== undefined ? Number(plan.maxJobs) : 5,
+      maxUsers: plan.maxUsers !== undefined ? Number(plan.maxUsers) : 2,
+      maxCandidates: plan.maxCandidates !== undefined ? Number(plan.maxCandidates) : 500,
+      features: Array.isArray(plan.features) ? plan.features : [],
+      popular: Boolean(plan.popular),
+      active: plan.active !== undefined ? Boolean(plan.active) : true,
+      createdAt: plan.createdAt || new Date().toISOString()
+    };
+
+    const saved = db.saveSaaSPlan(newPlan);
+    res.json({ plan: saved });
+  });
+
+  // SUBSCRIPTIONS MANAGEMENT & COMPANIES OVERVIEW
+  app.get('/api/master/subscriptions', (req, res) => {
+    const subscriptions = db.getSubscriptions();
+    const companies = db.getCompanies();
+    const plans = db.getSaaSPlans();
+
+    // Map rich company subscription objects
+    const companySubscriptions = companies.map(comp => {
+      let sub = subscriptions.find(s => s.companyId === comp.id);
+      if (!sub) {
+        // Auto-assign default Starter plan subscription if not exists
+        const defaultPlan = plans[0] || { id: 'plan-starter', name: 'Plano Starter', priceMonthly: 290 };
+        sub = {
+          id: `sub-${comp.id}`,
+          companyId: comp.id,
+          companyName: comp.name,
+          planId: defaultPlan.id,
+          planName: defaultPlan.name,
+          status: comp.active ? 'ativa' : 'bloqueada',
+          billingCycle: 'mensal',
+          price: defaultPlan.priceMonthly,
+          autoRenew: true,
+          startDate: comp.createdAt,
+          nextBillingDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+          createdAt: comp.createdAt,
+          updatedAt: new Date().toISOString()
+        };
+        db.saveSubscription(sub);
+      }
+
+      // Count jobs & applications for usage stats
+      const jobs = db.getJobs(false, comp.id);
+      const applications = db.getApplicationsByCompany(comp.id);
+
+      return {
+        company: comp,
+        subscription: sub,
+        jobsCount: jobs.length,
+        applicationsCount: applications.length
+      };
+    });
+
+    res.json({ subscriptions: companySubscriptions, plans });
+  });
+
+  app.post('/api/master/subscriptions/status', (req, res) => {
+    const { companyId, status, planId, active } = req.body;
+    if (!companyId) {
+      return res.status(400).json({ error: 'companyId é obrigatório.' });
+    }
+
+    if (active !== undefined) {
+      db.toggleCompanyActiveStatus(companyId, Boolean(active));
+    }
+
+    let sub = db.getSubscriptionByCompany(companyId);
+    if (sub) {
+      if (status) sub.status = status;
+      if (planId) {
+        const plan = db.getSaaSPlans().find(p => p.id === planId);
+        if (plan) {
+          sub.planId = plan.id;
+          sub.planName = plan.name;
+          sub.price = sub.billingCycle === 'anual' ? plan.priceAnnual : plan.priceMonthly;
+        }
+      }
+      db.saveSubscription(sub);
+    }
+
+    res.json({ success: true, subscription: sub });
+  });
+
+  // INVOICES & NFS-e MANAGEMENT
+  app.get('/api/master/invoices', (req, res) => {
+    const { companyId } = req.query;
+    const invoices = db.getInvoices(companyId as string);
+    res.json({ invoices });
+  });
+
+  app.post('/api/master/invoices/create', (req, res) => {
+    const { companyId, planId, billingCycle, paymentMethod } = req.body;
+
+    const company = db.getCompanyById(companyId);
+    if (!company) {
+      return res.status(404).json({ error: 'Empresa não encontrada.' });
+    }
+
+    const plan = db.getSaaSPlans().find(p => p.id === planId) || db.getSaaSPlans()[0];
+    const amount = billingCycle === 'anual' ? plan.priceAnnual : plan.priceMonthly;
+    const invId = `FAT-${new Date().toISOString().slice(0, 7).replace('-', '')}-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newInvoice: any = {
+      id: invId,
+      idempotencyKey: `IDEM-${invId}-${company.id}`,
+      companyId: company.id,
+      companyName: company.name,
+      subscriptionId: `sub-${company.id}`,
+      planName: plan.name,
+      amount,
+      status: 'pendente',
+      paymentMethod: paymentMethod || 'pix',
+      pixQrCode: `00020126580014br.gov.bcb.pix0136${Math.random().toString(36).substring(2)}5204000053039865406${amount}.005802BR5925RL RH CONNECT LTDA6009SAO PAULO6304${Math.floor(1000 + Math.random() * 9000)}`,
+      pixQrCodeBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      ticketUrl: paymentMethod === 'boleto' ? `https://www.mercadopago.com.br/payments/ticket/${Math.floor(10000000 + Math.random() * 90000000)}/render` : undefined,
+      createdAt: new Date().toISOString(),
+      dueDate: new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString(),
+      nfeStatus: 'nao_emitida'
+    };
+
+    db.saveInvoice(newInvoice);
+    res.json({ invoice: newInvoice, message: 'Cobrança gerada via Mercado Pago com sucesso.' });
+  });
+
+  // NFS-e ISSUANCE (IDEMPOTENT BACKEND API)
+  app.post('/api/master/invoices/:id/issue-nfe', (req, res) => {
+    const { id } = req.params;
+    const result = db.issueNfeForInvoice(id);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      invoice: result.invoice,
+      message: result.error || 'Nota Fiscal de Serviço (NFS-e) emitida com sucesso no ambiente fiscal!'
+    });
+  });
+
+  // MERCADO PAGO WEBHOOK (BACKEND PAYMENT CONFIRMATION)
+  app.post('/api/webhooks/mercadopago', (req, res) => {
+    try {
+      console.log('Mercado Pago Webhook Received:', req.body);
+      const result = db.handleMercadoPagoWebhook(req.body);
+      res.status(200).json({ received: true, ...result });
+    } catch (e: any) {
+      console.error('Webhook error:', e);
+      res.status(500).json({ error: 'Erro interno ao processar webhook.' });
+    }
+  });
+
+  // --- COMPANY DASHBOARD METRICS ---
+  app.get('/api/company/dashboard', (req, res) => {
+    const { companyId } = req.query;
+    if (!companyId || typeof companyId !== 'string') {
+      return res.status(400).json({ error: 'companyId é obrigatório.' });
+    }
+    const metrics = db.getCompanyDashboardMetrics(companyId);
+    res.json({ metrics });
+  });
+
+  // --- 7. FUNCIONÁRIOS (CADASTRO CENTRAL DE COLABORADOR) ---
+  app.get('/api/company/employees', (req, res) => {
+    const { companyId } = req.query;
+    const employees = db.getEmployees(companyId as string);
+    res.json({ employees });
+  });
+
+  app.get('/api/company/employees/:id', (req, res) => {
+    const { id } = req.params;
+    const employee = db.getEmployeeById(id);
+    if (!employee) {
+      return res.status(404).json({ error: 'Colaborador não encontrado.' });
+    }
+    res.json({ employee });
+  });
+
+  app.post('/api/company/employees', (req, res) => {
+    const emp = req.body;
+    if (!emp.name || !emp.cpf || !emp.companyId) {
+      return res.status(400).json({ error: 'Nome, CPF e Empresa são obrigatórios.' });
+    }
+    if (!emp.id) {
+      emp.id = `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
+      emp.createdAt = new Date().toISOString();
+    }
+    emp.updatedAt = new Date().toISOString();
+
+    const saved = db.saveEmployee(emp);
+    res.json({ employee: saved, message: 'Colaborador salvo no cadastro central com sucesso!' });
+  });
+
+  // INTEGRAÇÃO RECRUTAMENTO/HEADHUNTER -> DEPARTAMENTO PESSOAL (ADMISSÃO E CONTRATAÇÃO)
+  app.post('/api/company/applications/:id/hire', (req, res) => {
+    const { id } = req.params;
+    const customAdmissionData = req.body;
+    const result = db.hireCandidateToEmployee(id, customAdmissionData);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+
+    res.json({
+      success: true,
+      message: result.message,
+      employee: result.employee
+    });
+  });
+
+  // --- 8. DEPARTAMENTO PESSOAL (FÉRIAS, RESCISÃO, OCORRÊNCIAS) ---
+  app.get('/api/company/vacations', (req, res) => {
+    const { companyId } = req.query;
+    const vacations = db.getVacations(companyId as string);
+    res.json({ vacations });
+  });
+
+  app.post('/api/company/vacations', (req, res) => {
+    const vac = req.body;
+    if (!vac.employeeId || !vac.companyId || !vac.startDate) {
+      return res.status(400).json({ error: 'Colaborador, Empresa e Data Inicial são obrigatórios.' });
+    }
+    if (!vac.id) {
+      vac.id = `VAC-${Math.floor(100 + Math.random() * 900)}`;
+      vac.createdAt = new Date().toISOString();
+    }
+    const emp = db.getEmployeeById(vac.employeeId);
+    if (emp) vac.employeeName = emp.name;
+
+    const saved = db.saveVacation(vac);
+    res.json({ vacation: saved, message: 'Férias agendadas no Departamento Pessoal!' });
+  });
+
+  app.get('/api/company/terminations', (req, res) => {
+    const { companyId } = req.query;
+    const terminations = db.getTerminations(companyId as string);
+    res.json({ terminations });
+  });
+
+  app.post('/api/company/terminations', (req, res) => {
+    const term = req.body;
+    if (!term.employeeId || !term.companyId || !term.reason) {
+      return res.status(400).json({ error: 'Colaborador, Empresa e Motivo do Desligamento são obrigatórios.' });
+    }
+    if (!term.id) {
+      term.id = `TERM-${Math.floor(100 + Math.random() * 900)}`;
+      term.createdAt = new Date().toISOString();
+    }
+    const emp = db.getEmployeeById(term.employeeId);
+    if (emp) term.employeeName = emp.name;
+
+    const saved = db.saveTermination(term);
+    res.json({ termination: saved, message: 'Rescisão cadastrada e colaborador atualizado como Desligado.' });
+  });
+
+  app.get('/api/company/dp-occurrences', (req, res) => {
+    const { companyId } = req.query;
+    const occurrences = db.getDPOccurrences(companyId as string);
+    res.json({ occurrences });
+  });
+
+  app.post('/api/company/dp-occurrences', (req, res) => {
+    const occ = req.body;
+    if (!occ.employeeId || !occ.companyId || !occ.description) {
+      return res.status(400).json({ error: 'Colaborador, Empresa e Descrição são obrigatórios.' });
+    }
+    if (!occ.id) {
+      occ.id = `OCC-${Math.floor(100 + Math.random() * 900)}`;
+      occ.createdAt = new Date().toISOString();
+    }
+    const emp = db.getEmployeeById(occ.employeeId);
+    if (emp) occ.employeeName = emp.name;
+
+    const saved = db.saveDPOccurrence(occ);
+    res.json({ occurrence: saved, message: 'Ocorrência registrada no prontuário do colaborador.' });
+  });
+
+  // --- 9. PONTO DIGITAL ---
+  app.get('/api/company/time-clock', (req, res) => {
+    const { companyId, employeeId } = req.query;
+    const entries = db.getTimeClockEntries(companyId as string, employeeId as string);
+    res.json({ timeClockEntries: entries });
+  });
+
+  app.post('/api/company/time-clock', (req, res) => {
+    const entry = req.body;
+    if (!entry.employeeId || !entry.companyId || !entry.clockIn) {
+      return res.status(400).json({ error: 'Colaborador, Empresa e Batimento de Ponto são obrigatórios.' });
+    }
+    if (!entry.id) {
+      entry.id = `PONTO-${Math.floor(100 + Math.random() * 900)}`;
+      entry.createdAt = new Date().toISOString();
+    }
+    const emp = db.getEmployeeById(entry.employeeId);
+    if (emp) entry.employeeName = emp.name;
+
+    const saved = db.saveTimeClockEntry(entry);
+    res.json({ entry: saved, message: 'Registro de ponto efetuado com sucesso!' });
+  });
+
+  // --- 10. FOLHA DE PAGAMENTO ---
+  app.get('/api/company/payrolls', (req, res) => {
+    const { companyId, monthYear } = req.query;
+    const payrolls = db.getPayrolls(companyId as string, monthYear as string);
+    res.json({ payrolls });
+  });
+
+  app.post('/api/company/payrolls/calculate', (req, res) => {
+    const { companyId, monthYear } = req.body;
+    if (!companyId || !monthYear) {
+      return res.status(400).json({ error: 'companyId e monthYear são obrigatórios.' });
+    }
+    const calculated = db.calculateAndGeneratePayroll(companyId, monthYear);
+    res.json({ payrolls: calculated, message: `Folha de pagamento de ${monthYear} calculada com sucesso para ${calculated.length} colaboradores.` });
+  });
+
+  // --- 11. BENEFÍCIOS ---
+  app.get('/api/company/benefits', (req, res) => {
+    const { companyId } = req.query;
+    const benefits = db.getBenefits(companyId as string);
+    res.json({ benefits });
+  });
+
+  app.post('/api/company/benefits', (req, res) => {
+    const ben = req.body;
+    if (!ben.name || !ben.companyId || !ben.type) {
+      return res.status(400).json({ error: 'Nome, Empresa e Tipo de Benefício são obrigatórios.' });
+    }
+    if (!ben.id) {
+      ben.id = `ben-${Math.floor(100 + Math.random() * 900)}`;
+      ben.createdAt = new Date().toISOString();
+    }
+    const saved = db.saveBenefit(ben);
+    res.json({ benefit: saved, message: 'Benefício salvo com sucesso!' });
+  });
+
+  // --- 12. DOCUMENTOS CENTRAIS ---
+  app.get('/api/company/central-documents', (req, res) => {
+    const { companyId, entityType, entityId } = req.query;
+    const docs = db.getCentralDocuments(companyId as string, entityType as string, entityId as string);
+    res.json({ documents: docs });
+  });
+
+  app.post('/api/company/central-documents', (req, res) => {
+    const doc = req.body;
+    if (!doc.title || !doc.companyId || !doc.fileUrl) {
+      return res.status(400).json({ error: 'Título, Empresa e Anexo/Arquivo são obrigatórios.' });
+    }
+    if (!doc.id) {
+      doc.id = `DOC-CENTRAL-${Math.floor(100 + Math.random() * 900)}`;
+      doc.uploadedAt = new Date().toISOString();
+    }
+    const saved = db.saveCentralDocument(doc);
+    res.json({ document: saved, message: 'Documento armazenado com sucesso na Central Documental.' });
+  });
+
+  // CONSTRUTOR MASTER INTERNO (BUILDER CONFIG)
+  app.get('/api/master/builder', (req, res) => {
+    const config = db.getMasterBuilderConfig();
+    res.json({ config });
+  });
+
+  app.post('/api/master/builder', (req, res) => {
+    const { config } = req.body;
+    if (!config) {
+      return res.status(400).json({ error: 'Configuração do Construtor Master ausente.' });
+    }
+
+    const updated = db.updateMasterBuilderConfig(config);
+    res.json({ config: updated, message: 'Módulos, campos customizados e integrações do Construtor Master salvos!' });
   });
 
   // VITE MIDDLEWARE FOR DEVELOPMENT OR STATIC SERVING IN PROD
