@@ -217,7 +217,9 @@ export interface Interview {
   type: 'Presencial' | 'Google Meet' | 'Microsoft Teams' | 'Telefone' | 'Outro';
   link?: string;
   notes?: string;
-  status: 'agendada' | 'concluida' | 'cancelada';
+  outcomeNotes?: string;
+  rating?: number;
+  status: 'agendada' | 'concluida' | 'cancelada' | 'realizada' | 'reagendada';
   createdAt: string;
 }
 

@@ -565,7 +565,29 @@ async function startServer() {
     res.json({ note });
   });
 
-  // SCHEDULE INTERVIEW
+  // SCHEDULE INTERVIEW & COMPANY INTERVIEWS
+  app.get('/api/company/interviews', (req, res) => {
+    const { companyId } = req.query;
+    if (!companyId || typeof companyId !== 'string') {
+      return res.status(400).json({ error: 'companyId é obrigatório.' });
+    }
+
+    const interviews = db.getInterviews(companyId);
+    const enriched = interviews.map(i => {
+      const candidate = db.findCandidateById(i.candidateId);
+      const job = db.getJobById(i.jobId);
+      return {
+        ...i,
+        candidateName: candidate?.name || 'Candidato',
+        candidateEmail: candidate?.email,
+        candidatePhone: candidate?.phone,
+        jobTitle: job?.title || 'Vaga'
+      };
+    });
+
+    res.json({ interviews: enriched });
+  });
+
   app.post('/api/company/applications/:id/interviews', (req, res) => {
     const { id } = req.params;
     const { date, time, responsible, type, link, notes } = req.body;
@@ -601,6 +623,43 @@ async function startServer() {
     });
 
     res.json({ interview });
+  });
+
+  app.patch('/api/company/interviews/:id', (req, res) => {
+    const { id } = req.params;
+    const { status, date, time, responsible, type, link, notes, outcomeNotes, rating } = req.body;
+
+    const interviews = db.getInterviews();
+    const existing = interviews.find(i => i.id === id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Entrevista não encontrada.' });
+    }
+
+    const updated = db.saveInterview({
+      ...existing,
+      status: status || existing.status,
+      date: date || existing.date,
+      time: time || existing.time,
+      responsible: responsible || existing.responsible,
+      type: type || existing.type,
+      link: link !== undefined ? link : existing.link,
+      notes: notes !== undefined ? notes : existing.notes,
+      outcomeNotes: outcomeNotes !== undefined ? outcomeNotes : existing.outcomeNotes,
+      rating: rating !== undefined ? rating : existing.rating
+    });
+
+    if (existing.applicationId) {
+      db.addTimelineEvent({
+        id: `TL-${Date.now()}`,
+        applicationId: existing.applicationId,
+        title: 'Entrevista Atualizada',
+        description: `Entrevista atualizada: status = ${updated.status}. ${outcomeNotes ? 'Resultado registrado.' : ''}`,
+        author: responsible || 'Recrutador',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({ interview: updated });
   });
 
   // TALENT BANK SEARCH FOR COMPANY

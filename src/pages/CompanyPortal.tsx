@@ -39,6 +39,7 @@ import { formatCPF, maskCPFForPrivacy } from '../utils/cpf';
 import { CompanyDashboardView } from '../components/company/CompanyDashboardView';
 import { HeadhunterView } from '../components/company/HeadhunterView';
 import { BancoTalentosView } from '../components/company/BancoTalentosView';
+import { AgendaEntrevistasView } from '../components/company/AgendaEntrevistasView';
 import { FuncionariosView } from '../components/company/FuncionariosView';
 import { DepartamentoPessoalView } from '../components/company/DepartamentoPessoalView';
 import { PontoDigitalView } from '../components/company/PontoDigitalView';
@@ -71,6 +72,7 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
     | 'vagas'
     | 'headhunter'
     | 'banco-de-talentos'
+    | 'agenda-entrevistas'
     | 'funcionarios'
     | 'departamento-pessoal'
     | 'ponto-digital'
@@ -395,6 +397,7 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
             { id: 'vagas', label: 'Recrutamento (ATS)', icon: Briefcase },
             { id: 'headhunter', label: 'Módulo Headhunter', icon: Award },
             { id: 'banco-de-talentos', label: 'Banco de Talentos', icon: UserCheck },
+            { id: 'agenda-entrevistas', label: 'Agenda de Entrevistas', icon: Calendar },
             { id: 'funcionarios', label: 'Colaboradores Central', icon: Users },
             { id: 'departamento-pessoal', label: 'Departamento Pessoal (DP)', icon: Building2 },
             { id: 'ponto-digital', label: 'Ponto Digital & Espelho', icon: Clock },
@@ -601,6 +604,11 @@ export const CompanyPortal: React.FC<CompanyPortalProps> = ({
           {/* MENU: BANCO DE TALENTOS */}
           {activeMenu === 'banco-de-talentos' && (
             <BancoTalentosView companyId={companyId} />
+          )}
+
+          {/* MENU: AGENDA DE ENTREVISTAS */}
+          {activeMenu === 'agenda-entrevistas' && (
+            <AgendaEntrevistasView companyId={companyId} />
           )}
 
           {/* MENU: FUNCIONARIOS / COLABORADORES */}

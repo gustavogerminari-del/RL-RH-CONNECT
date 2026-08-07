@@ -27,6 +27,9 @@ export const FuncionariosView: React.FC<Props> = ({ companyId }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [empActiveTab, setEmpActiveTab] = useState<
+    'resumo' | 'pessoais' | 'profissionais' | 'documentos' | 'contrato' | 'jornada' | 'beneficios' | 'dependentes' | 'ferias' | 'ponto' | 'folha' | 'ocorrencias' | 'historico'
+  >('resumo');
   const [showAddModal, setShowAddModal] = useState(false);
 
   // New Employee Form
@@ -296,60 +299,199 @@ export const FuncionariosView: React.FC<Props> = ({ companyId }) => {
         </div>
       )}
 
-      {/* Employee Details Modal */}
+      {/* Employee Details Modal / Drawer with 13 Structured Tabs */}
       {selectedEmp && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
-            <div className="flex justify-between items-start border-b border-slate-200 pb-3">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex justify-end">
+          <div className="w-full max-w-[620px] bg-white h-full shadow-2xl flex flex-col border-l border-slate-200">
+            {/* Header */}
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between shrink-0">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">{selectedEmp.name}</h3>
-                <p className="text-xs text-slate-500">ID: {selectedEmp.id} | {selectedEmp.role} ({selectedEmp.department})</p>
+                <h3 className="text-base font-bold text-white">{selectedEmp.name}</h3>
+                <p className="text-xs text-slate-400">
+                  ID: {selectedEmp.id} • {selectedEmp.role} ({selectedEmp.department})
+                </p>
               </div>
               <button
                 onClick={() => setSelectedEmp(null)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-sm"
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
               >
                 ✕ Fechar
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
-              <div>
-                <p className="text-slate-500 font-medium">CPF</p>
-                <p className="font-bold text-slate-900">{selectedEmp.cpf}</p>
-              </div>
-              <div>
-                <p className="text-slate-500 font-medium">Contrato</p>
-                <p className="font-bold text-slate-900">{selectedEmp.contractType}</p>
-              </div>
-              <div>
-                <p className="text-slate-500 font-medium">Salário</p>
-                <p className="font-bold text-emerald-700">R$ {selectedEmp.salary?.toLocaleString('pt-BR')}</p>
-              </div>
-              <div>
-                <p className="text-slate-500 font-medium">Admissão</p>
-                <p className="font-bold text-slate-900">{selectedEmp.admissionDate}</p>
-              </div>
-              <div>
-                <p className="text-slate-500 font-medium">Jornada</p>
-                <p className="font-bold text-slate-900">{selectedEmp.workSchedule}</p>
-              </div>
-              <div>
-                <p className="text-slate-500 font-medium">Status</p>
-                <p className="font-bold text-blue-700 uppercase">{selectedEmp.status}</p>
-              </div>
+            {/* 13 Navigation Tabs */}
+            <div className="bg-slate-100 border-b border-slate-200 flex items-center overflow-x-auto no-scrollbar px-2 py-1.5 text-xs shrink-0 space-x-1">
+              {[
+                { id: 'resumo', label: 'Resumo' },
+                { id: 'pessoais', label: 'Dados Pessoais' },
+                { id: 'profissionais', label: 'Profissionais' },
+                { id: 'documentos', label: 'Documentos' },
+                { id: 'contrato', label: 'Contrato' },
+                { id: 'jornada', label: 'Jornada' },
+                { id: 'beneficios', label: 'Benefícios' },
+                { id: 'dependentes', label: 'Dependentes' },
+                { id: 'ferias', label: 'Férias' },
+                { id: 'ponto', label: 'Ponto' },
+                { id: 'folha', label: 'Folha' },
+                { id: 'ocorrencias', label: 'Ocorrências' },
+                { id: 'historico', label: 'Histórico' }
+              ].map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setEmpActiveTab(t.id as any)}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold whitespace-nowrap transition ${
+                    empActiveTab === t.id
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
 
-            {selectedEmp.bankAccount && (
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-                <p className="font-bold text-slate-800 flex items-center gap-1.5">
-                  <CreditCard className="w-4 h-4 text-blue-600" /> Dados Bancários para Holerite / Pix
-                </p>
-                <p className="text-slate-600">Banco: {selectedEmp.bankAccount.bank} | Agência: {selectedEmp.bankAccount.agency} | Conta: {selectedEmp.bankAccount.account}</p>
-              </div>
-            )}
+            {/* Content Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+              {/* TAB: RESUMO */}
+              {empActiveTab === 'resumo' && (
+                <div className="space-y-4">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-2 gap-3 text-slate-700">
+                    <div>
+                      <span className="text-slate-400 block font-medium">Status do Colaborador:</span>
+                      <span className="font-bold text-emerald-700 uppercase">{selectedEmp.status}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">CPF:</span>
+                      <span className="font-mono font-bold text-slate-900">{selectedEmp.cpf}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Cargo:</span>
+                      <span className="font-bold text-slate-900">{selectedEmp.role}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Departamento:</span>
+                      <span className="font-semibold text-slate-800">{selectedEmp.department}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Salário Base:</span>
+                      <span className="font-bold text-emerald-700">R$ {selectedEmp.salary?.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-medium">Data de Admissão:</span>
+                      <span className="font-semibold text-slate-800">{new Date(selectedEmp.admissionDate).toLocaleDateString('pt-BR')}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-            <div className="pt-3 border-t border-slate-200 flex justify-end">
+              {/* TAB: DADOS PESSOAIS */}
+              {empActiveTab === 'pessoais' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Identificação do Colaborador</h4>
+                  <p><span className="text-slate-500">Nome:</span> <strong>{selectedEmp.name}</strong></p>
+                  <p><span className="text-slate-500">CPF:</span> <strong className="font-mono">{selectedEmp.cpf}</strong></p>
+                  <p><span className="text-slate-500">Nascimento:</span> {selectedEmp.birthDate || 'Não informado'}</p>
+                  <p><span className="text-slate-500">E-mail:</span> {selectedEmp.email || 'Não informado'}</p>
+                  <p><span className="text-slate-500">Telefone:</span> {selectedEmp.phone || 'Não informado'}</p>
+                  <p><span className="text-slate-500">Endereço:</span> {selectedEmp.address ? `${selectedEmp.address.street || ''} ${selectedEmp.address.city || ''}/${selectedEmp.address.state || ''}` : 'Não informado'}</p>
+                </div>
+              )}
+
+              {/* TAB: DADOS PROFISSIONAIS */}
+              {empActiveTab === 'profissionais' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Cargo e Estrutura Organizacional</h4>
+                  <p><span className="text-slate-500">Cargo Atual:</span> <strong>{selectedEmp.role}</strong></p>
+                  <p><span className="text-slate-500">Departamento:</span> <strong>{selectedEmp.department}</strong></p>
+                  <p><span className="text-slate-500">ID do Candidato Origem:</span> <strong>{selectedEmp.candidateId || 'Admissão Direta'}</strong></p>
+                </div>
+              )}
+
+              {/* TAB: DOCUMENTOS */}
+              {empActiveTab === 'documentos' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Documentos Digitais & Contrato</h4>
+                  <p className="text-slate-600">Documentação vinculada ao prontuário do funcionário no Departamento Pessoal.</p>
+                </div>
+              )}
+
+              {/* TAB: CONTRATO */}
+              {empActiveTab === 'contrato' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Regime e Tipo de Contrato</h4>
+                  <p><span className="text-slate-500">Tipo de Contrato:</span> <strong>{selectedEmp.contractType}</strong></p>
+                  <p><span className="text-slate-500">Salário Contratual:</span> <strong className="text-emerald-700">R$ {selectedEmp.salary?.toLocaleString('pt-BR')}</strong></p>
+                  <p><span className="text-slate-500">Data Admissão:</span> {selectedEmp.admissionDate}</p>
+                </div>
+              )}
+
+              {/* TAB: JORNADA */}
+              {empActiveTab === 'jornada' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Carga Horária e Escala de Trabalho</h4>
+                  <p><span className="text-slate-500">Jornada:</span> <strong>{selectedEmp.workSchedule}</strong></p>
+                  <p><span className="text-slate-500">Regime:</span> Ponto Digital com tolerância CLT de 10 minutos diários.</p>
+                </div>
+              )}
+
+              {/* TAB: BENEFÍCIOS */}
+              {empActiveTab === 'beneficios' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Pacote de Benefícios do Colaborador</h4>
+                  <p className="text-slate-600">Vale Transporte, Vale Refeição/Alimentação e Plano de Saúde vinculados no portal de benefícios.</p>
+                </div>
+              )}
+
+              {/* TAB: DEPENDENTES */}
+              {empActiveTab === 'dependentes' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Dependentes para IRRF / Salário Família</h4>
+                  <p className="text-slate-600">Nenhum dependente cadastrado para este colaborador.</p>
+                </div>
+              )}
+
+              {/* TAB: FÉRIAS */}
+              {empActiveTab === 'ferias' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Período Aquisitivo e Programação de Férias</h4>
+                  <p className="text-slate-600">Período Aquisitivo Ativo. Programação gerida via módulo Departamento Pessoal.</p>
+                </div>
+              )}
+
+              {/* TAB: PONTO */}
+              {empActiveTab === 'ponto' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Espelho de Ponto Digital & Banco de Horas</h4>
+                  <p className="text-slate-600">Registros de batimentos diários integrados com cálculo de horas extras e faltas.</p>
+                </div>
+              )}
+
+              {/* TAB: FOLHA */}
+              {empActiveTab === 'folha' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Histórico de Holerites e Lançamentos</h4>
+                  <p className="text-slate-600">Proventos, descontos de INSS, IRRF e salário líquido gerados mensalmente.</p>
+                </div>
+              )}
+
+              {/* TAB: OCORRÊNCIAS */}
+              {empActiveTab === 'ocorrencias' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Ocorrências do Prontuário</h4>
+                  <p className="text-slate-600">Registro de atestados, ausências justificadas ou advertências.</p>
+                </div>
+              )}
+
+              {/* TAB: HISTÓRICO */}
+              {empActiveTab === 'historico' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-xs border-b pb-1">Linha do Tempo Profissional</h4>
+                  <p className="text-slate-600">Admissão realizada em {new Date(selectedEmp.admissionDate).toLocaleDateString('pt-BR')}.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-200 flex justify-end shrink-0">
               <button
                 onClick={() => setSelectedEmp(null)}
                 className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl"
