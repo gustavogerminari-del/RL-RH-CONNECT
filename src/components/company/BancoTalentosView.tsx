@@ -13,10 +13,12 @@ import {
   Filter,
   CheckCircle2,
   ShieldCheck,
-  Building2
+  Building2,
+  Plus
 } from 'lucide-react';
 import { Candidate } from '../../types';
 import { maskCPFForPrivacy } from '../../utils/cpf';
+import { TalentBankModal } from '../TalentBankModal';
 
 interface Props {
   companyId: string;
@@ -27,6 +29,7 @@ export const BancoTalentosView: React.FC<Props> = ({ companyId }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const fetchTalents = async () => {
     try {
@@ -52,7 +55,7 @@ export const BancoTalentosView: React.FC<Props> = ({ companyId }) => {
     const q = searchTerm.toLowerCase();
     return (
       c.name.toLowerCase().includes(q) ||
-      c.cpf.includes(q) ||
+      (c.cpf && c.cpf.includes(q)) ||
       c.city.toLowerCase().includes(q) ||
       c.state.toLowerCase().includes(q) ||
       (c.currentRole && c.currentRole.toLowerCase().includes(q)) ||
@@ -85,17 +88,36 @@ export const BancoTalentosView: React.FC<Props> = ({ companyId }) => {
           <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-2.5" />
           <input
             type="text"
-            placeholder="Buscar por nome, CPF, cidade, habilidade..."
+            placeholder="Buscar por nome, cidade, habilidade..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-11 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
           />
         </div>
 
-        <div className="text-xs text-slate-500 font-medium">
-          Exibindo {filtered.length} de {candidates.length} talentos
+        <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="text-xs text-slate-500 font-medium">
+            Exibindo {filtered.length} de {candidates.length} talentos
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-1.5 transition shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Cadastrar Currículo</span>
+          </button>
         </div>
       </div>
+
+      {showAddModal && (
+        <TalentBankModal
+          onClose={() => setShowAddModal(false)}
+          onSuccess={() => {
+            fetchTalents();
+            setShowAddModal(false);
+          }}
+        />
+      )}
 
       {/* Candidates List Grid */}
       {loading ? (

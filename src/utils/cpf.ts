@@ -14,9 +14,10 @@ export function formatCPF(cpf: string): string {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
-export function maskCPFForPrivacy(cpf: string): string {
+export function maskCPFForPrivacy(cpf?: string): string {
+  if (!cpf) return 'Não informado';
   const digits = cleanCPF(cpf);
-  if (digits.length !== 11) return '***.***.***-**';
+  if (digits.length !== 11) return 'Não informado';
   const lastTwo = digits.slice(9);
   return `***.***.***-${lastTwo}`;
 }

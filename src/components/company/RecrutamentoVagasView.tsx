@@ -32,9 +32,10 @@ import { CandidateSideDrawer } from '../CandidateSideDrawer';
 interface Props {
   companyId: string;
   userRole?: string;
+  onNavigateMenu?: (menu: string) => void;
 }
 
-export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = 'admin' }) => {
+export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = 'admin', onNavigateMenu }) => {
   // Permission check for commercial fields
   const canViewCommercial = userRole === 'admin' || userRole === 'master' || userRole === 'commercial' || userRole === 'director';
 
@@ -647,7 +648,13 @@ export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = '
             companyId={companyId}
             onClose={() => setDrawerAppId(null)}
             onUpdateStage={() => {
-              fetchJobApplications(managingJob.id);
+              if (managingJob) fetchJobApplications(managingJob.id);
+            }}
+            onNavigateMenu={(menuId) => {
+              if (onNavigateMenu) {
+                onNavigateMenu(menuId);
+                setDrawerAppId(null);
+              }
             }}
           />
         )}

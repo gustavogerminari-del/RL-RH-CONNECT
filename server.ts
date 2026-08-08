@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { db } from './src/server/db.js';
 import { isValidCPF, cleanCPF } from './src/utils/cpf.js';
 import { extractResumeData, calculateAIFitScore } from './src/server/gemini.js';
-import { Application, Candidate, CandidateDocument, Job } from './src/types.js';
+import { Application, Candidate, CandidateDocument, Job, Company, CompanyUser, Subscription } from './src/types.js';
 
 async function startServer() {
   const app = express();
@@ -116,18 +116,20 @@ async function startServer() {
         return res.status(404).json({ error: 'Esta vaga não aceita mais candidaturas.' });
       }
 
-      // 1. CPF Validation
-      const cpfRaw = personalData.cpf || '';
-      if (!isValidCPF(cpfRaw)) {
+      // 1. Mandatory Email & Phone Check + Optional CPF
+      const emailRaw = (personalData.email || '').trim();
+      const phoneRaw = (personalData.phone || '').trim();
+      if (!emailRaw || !phoneRaw) {
         return res
           .status(400)
-          .json({ error: 'CPF informado é inválido. Por favor, verifique os dígitos.' });
+          .json({ error: 'E-mail e Telefone (WhatsApp) são obrigatórios para a candidatura.' });
       }
 
-      const cleanCpfVal = cleanCPF(cpfRaw);
+      const cpfRaw = personalData.cpf || '';
+      const cleanCpfVal = cpfRaw ? cleanCPF(cpfRaw) : '';
 
-      // 2. Identify or Create Candidate
-      let candidate = db.findCandidateByCpf(cleanCpfVal);
+      // 2. Identify or Create Candidate by Email, Phone or CPF
+      let candidate = db.findCandidateByEmailOrPhone(emailRaw, phoneRaw, cpfRaw);
       const candidateId = candidate ? candidate.id : `CAN-${Date.now()}`;
 
       // 3. Duplicate Application Check
@@ -286,16 +288,18 @@ async function startServer() {
     try {
       const { personalData, resumeFile, lgpdAccepted } = req.body;
 
-      if (!personalData || !personalData.cpf) {
-        return res.status(400).json({ error: 'Dados pessoais são obrigatórios.' });
+      if (!personalData || !personalData.email || !personalData.phone) {
+        return res
+          .status(400)
+          .json({ error: 'E-mail e Telefone (WhatsApp) são obrigatórios para o cadastro.' });
       }
 
-      if (!isValidCPF(personalData.cpf)) {
-        return res.status(400).json({ error: 'CPF informado é inválido.' });
-      }
+      const emailRaw = (personalData.email || '').trim();
+      const phoneRaw = (personalData.phone || '').trim();
+      const cpfRaw = personalData.cpf || '';
+      const cleanCpfVal = cpfRaw ? cleanCPF(cpfRaw) : '';
 
-      const cleanCpfVal = cleanCPF(personalData.cpf);
-      let candidate = db.findCandidateByCpf(cleanCpfVal);
+      let candidate = db.findCandidateByEmailOrPhone(emailRaw, phoneRaw, cpfRaw);
       const candidateId = candidate ? candidate.id : `CAN-${Date.now()}`;
 
       let resumeExtractedData = candidate?.resumeExtractedData;
@@ -350,14 +354,14 @@ async function startServer() {
   // 2. AUTH & COMPANY RECRUITMENT ENDPOINTS
 
   app.post('/api/auth/login', (req, res) => {
-    const { email } = req.body;
+    const { email, password } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'E-mail é obrigatório.' });
     }
 
-    const user = db.authenticateUser(email);
+    const user = db.authenticateUser(email, password);
     if (!user) {
-      return res.status(401).json({ error: 'Usuário não encontrado no RL RH Connect.' });
+      return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
     }
 
     const company = user.companyId === 'master' ? null : db.getCompanyById(user.companyId);
@@ -608,6 +612,35 @@ async function startServer() {
         author: authorName || 'Recrutador',
         timestamp: new Date().toISOString()
       });
+
+      // AUTOMATIC FLOW FOR HIRING: When a candidate is hired ('contratado' / 'Contratado'),
+      // automatically move ALL other candidates applied to this same job to 'banco_de_talentos'
+      // and register candidate in central Employees / Admissions
+      const currentStageStr = String(app.stage || '').toLowerCase();
+      if (currentStageStr.includes('contratad')) {
+        db.hireCandidateToEmployee(app.id);
+
+        if (app.jobId) {
+          const jobApps = db.getApplicationsByJob(app.jobId, app.companyId);
+          jobApps.forEach(otherApp => {
+            const otherStageStr = String(otherApp.stage || '').toLowerCase();
+            if (otherApp.id !== app.id && !otherStageStr.includes('contratad') && !otherStageStr.includes('banco')) {
+              otherApp.stage = 'banco_de_talentos' as any;
+              otherApp.updatedAt = new Date().toISOString();
+              db.saveApplication(otherApp);
+
+              db.addTimelineEvent({
+                id: `TL-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                applicationId: otherApp.id,
+                title: 'Redirecionado ao Banco de Talentos',
+                description: `Vaga preenchida por contratação. Candidato redirecionado automaticamente para o Banco de Talentos.`,
+                author: authorName || 'Sistema RH',
+                timestamp: new Date().toISOString()
+              });
+            }
+          });
+        }
+      }
     }
 
     res.json({ application: app });
@@ -739,8 +772,8 @@ async function startServer() {
     res.json({ interview: updated });
   });
 
-  // TALENT BANK SEARCH FOR COMPANY
-  app.get('/api/company/talent-bank', (req, res) => {
+  // TALENT BANK / CANDIDATES POOL SEARCH FOR COMPANY
+  app.get(['/api/company/talent-bank', '/api/company/candidates/pool'], (req, res) => {
     const { search } = req.query;
     let candidates = db.getTalentBankCandidates();
 
@@ -833,10 +866,12 @@ async function startServer() {
       // Count jobs & applications for usage stats
       const jobs = db.getJobs(false, comp.id);
       const applications = db.getApplicationsByCompany(comp.id);
+      const user = db.getCompanyUsers().find(u => u.companyId === comp.id);
 
       return {
         company: comp,
         subscription: sub,
+        user: user || null,
         jobsCount: jobs.length,
         applicationsCount: applications.length
       };
@@ -870,6 +905,194 @@ async function startServer() {
     }
 
     res.json({ success: true, subscription: sub });
+  });
+
+  // REGISTER NEW COMPANY WITH LOGIN, PASSWORD & MODULES
+  app.post('/api/master/companies/register', (req, res) => {
+    const {
+      name,
+      tradeName,
+      cnpj,
+      city,
+      state,
+      description,
+      adminName,
+      adminEmail,
+      adminPassword,
+      adminRole,
+      planId,
+      billingCycle,
+      modules
+    } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'O Nome da Empresa é obrigatório.' });
+    }
+    if (!adminEmail || !adminEmail.trim()) {
+      return res.status(400).json({ error: 'O E-mail do Administrador é obrigatório.' });
+    }
+
+    const companyId = `comp-${Date.now().toString(36)}`;
+    const enabledModules = Array.isArray(modules) && modules.length > 0
+      ? modules
+      : ['vagas', 'candidatos', 'banco-de-talentos', 'funcionarios', 'ponto-digital', 'folha-de-pagamento', 'beneficios', 'central-documentos', 'relatorios', 'ia-rh'];
+
+    // 1. Create Company
+    const newCompany: Company = {
+      id: companyId,
+      name: name.trim(),
+      tradeName: tradeName ? tradeName.trim() : name.trim(),
+      cnpj: cnpj ? cnpj.trim() : '',
+      city: city ? city.trim() : 'São Paulo',
+      state: state ? state.trim() : 'SP',
+      description: description ? description.trim() : '',
+      active: true,
+      modules: enabledModules,
+      createdAt: new Date().toISOString()
+    };
+    db.saveCompany(newCompany);
+
+    // 2. Create Admin User Credentials
+    const userId = `usr-${Date.now().toString(36)}`;
+    const newUser: CompanyUser = {
+      id: userId,
+      email: adminEmail.trim().toLowerCase(),
+      name: adminName ? adminName.trim() : 'Administrador Empresa',
+      password: adminPassword ? adminPassword.trim() : '123456',
+      companyId: companyId,
+      role: (adminRole as any) || 'admin'
+    };
+    db.saveCompanyUser(newUser);
+
+    // 3. Create Subscription
+    const plans = db.getSaaSPlans();
+    const selectedPlan = plans.find(p => p.id === planId) || plans[0] || {
+      id: 'plan-starter',
+      name: 'Plano Profissional',
+      priceMonthly: 390,
+      priceAnnual: 3900
+    };
+
+    const cycle = billingCycle === 'anual' ? 'anual' : 'mensal';
+    const price = cycle === 'anual' ? selectedPlan.priceAnnual : selectedPlan.priceMonthly;
+
+    const newSub: Subscription = {
+      id: `sub-${companyId}`,
+      companyId,
+      companyName: newCompany.name,
+      planId: selectedPlan.id,
+      planName: selectedPlan.name,
+      status: 'ativa',
+      billingCycle: cycle,
+      price: price || 390,
+      autoRenew: true,
+      startDate: new Date().toISOString(),
+      nextBillingDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+      modules: enabledModules,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    db.saveSubscription(newSub);
+
+    res.json({
+      success: true,
+      message: `Empresa "${newCompany.name}" e credenciais criadas com sucesso!`,
+      company: newCompany,
+      user: newUser,
+      subscription: newSub
+    });
+  });
+
+  // UPDATE EXISTING COMPANY DETAILS, CREDENTIALS, PLAN, MODULES & STATUS
+  app.put('/api/master/companies/:id', (req, res) => {
+    const { id } = req.params;
+    const {
+      name,
+      tradeName,
+      cnpj,
+      city,
+      state,
+      description,
+      adminName,
+      adminEmail,
+      adminPassword,
+      adminRole,
+      planId,
+      billingCycle,
+      modules,
+      active
+    } = req.body;
+
+    const company = db.getCompanyById(id);
+    if (!company) {
+      return res.status(404).json({ error: 'Empresa não encontrada.' });
+    }
+
+    if (name && name.trim()) company.name = name.trim();
+    if (tradeName !== undefined) company.tradeName = tradeName.trim();
+    if (cnpj !== undefined) company.cnpj = cnpj.trim();
+    if (city !== undefined) company.city = city.trim();
+    if (state !== undefined) company.state = state.trim();
+    if (description !== undefined) company.description = description.trim();
+    if (typeof active === 'boolean') company.active = active;
+
+    if (Array.isArray(modules)) {
+      company.modules = modules;
+    }
+    db.saveCompany(company);
+
+    // Update or create user credentials
+    let user = db.getCompanyUsers().find(u => u.companyId === id);
+    if (adminEmail || adminName || adminPassword || adminRole) {
+      if (!user) {
+        user = {
+          id: `usr-${id}`,
+          email: adminEmail ? adminEmail.trim().toLowerCase() : `admin@${id}.com`,
+          name: adminName ? adminName.trim() : 'Administrador',
+          password: adminPassword ? adminPassword.trim() : '123456',
+          companyId: id,
+          role: adminRole || 'admin'
+        };
+      } else {
+        if (adminEmail && adminEmail.trim()) user.email = adminEmail.trim().toLowerCase();
+        if (adminName && adminName.trim()) user.name = adminName.trim();
+        if (adminPassword && adminPassword.trim()) user.password = adminPassword.trim();
+        if (adminRole) user.role = adminRole;
+      }
+      db.saveCompanyUser(user);
+    }
+
+    // Update Subscription plan / billing cycle / modules / status
+    let sub = db.getSubscriptionByCompany(id);
+    if (sub) {
+      if (planId) {
+        const plans = db.getSaaSPlans();
+        const selectedPlan = plans.find(p => p.id === planId);
+        if (selectedPlan) {
+          sub.planId = selectedPlan.id;
+          sub.planName = selectedPlan.name;
+          const cycle = billingCycle || sub.billingCycle;
+          sub.billingCycle = cycle;
+          sub.price = cycle === 'anual' ? selectedPlan.priceAnnual : selectedPlan.priceMonthly;
+        }
+      }
+      if (typeof active === 'boolean') {
+        sub.status = active ? 'ativa' : 'bloqueada';
+      }
+      if (Array.isArray(modules)) {
+        sub.modules = modules;
+      }
+      sub.updatedAt = new Date().toISOString();
+      db.saveSubscription(sub);
+    }
+
+    res.json({
+      success: true,
+      message: `Empresa "${company.name}" atualizada com sucesso!`,
+      company,
+      user,
+      subscription: sub
+    });
   });
 
   // INVOICES & NFS-e MANAGEMENT
@@ -997,6 +1220,36 @@ async function startServer() {
       message: result.message,
       employee: result.employee
     });
+  });
+
+  app.get('/api/company/contratacoes', (req, res) => {
+    const { companyId } = req.query;
+    const cid = (companyId as string) || 'c1';
+
+    const allApps = db.getApplicationsByCompany(cid);
+    const hiredApps = allApps.filter(a => String(a.stage || '').toLowerCase().includes('contratad'));
+
+    const list = hiredApps.map(a => {
+      const candidate = db.findCandidateById(a.candidateId);
+      const job = db.getJobById(a.jobId);
+
+      return {
+        id: `contratacao-${a.id}`,
+        applicationId: a.id,
+        candidateName: candidate ? candidate.name : 'Candidato Contratado',
+        jobTitle: job ? job.title : 'Vaga Contratada',
+        date: new Date(a.updatedAt || a.createdAt || Date.now()).toLocaleDateString('pt-BR'),
+        destination: 'Financeiro / Headhunter',
+        statusProcesso: 'Contratação Concluída',
+        remuneration: job && job.salaryMin ? `R$ ${job.salaryMin.toLocaleString('pt-BR')}` : 'R$ 5.200,00',
+        salaryAmount: job && job.salaryMin ? `R$ ${job.salaryMin.toLocaleString('pt-BR')}` : 'R$ 5.200,00',
+        honorariosAmount: job && job.salaryMin ? `R$ ${(job.salaryMin * 2).toLocaleString('pt-BR')}` : 'R$ 10.400,00',
+        clientName: 'Logística Express S.A.',
+        sentToHeadhunter: false
+      };
+    });
+
+    res.json({ contratacoes: list });
   });
 
   // --- 8. DEPARTAMENTO PESSOAL (FÉRIAS, RESCISÃO, OCORRÊNCIAS) ---

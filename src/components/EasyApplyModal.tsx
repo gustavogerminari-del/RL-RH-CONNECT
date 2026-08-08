@@ -202,10 +202,9 @@ export const EasyApplyModal: React.FC<EasyApplyModalProps> = ({ job, onClose, on
   const canProceedStep1 = () => {
     return (
       personalData.name.trim().length >= 3 &&
-      isValidCPF(personalData.cpf) &&
       personalData.birthDate &&
       personalData.email.includes('@') &&
-      personalData.phone.replace(/\D/g, '').length >= 10 &&
+      personalData.phone.replace(/\D/g, '').length >= 8 &&
       personalData.city.trim() &&
       personalData.state.trim()
     );
@@ -381,26 +380,6 @@ export const EasyApplyModal: React.FC<EasyApplyModalProps> = ({ job, onClose, on
                     }
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    CPF (Obrigatório / Validação Rígida) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={14}
-                    placeholder="000.000.000-00"
-                    value={personalData.cpf}
-                    onChange={handleCpfChange}
-                    className={`w-full px-3.5 py-2.5 bg-slate-50 border ${
-                      cpfError ? 'border-rose-500 bg-rose-50/30' : 'border-slate-200'
-                    } rounded-xl text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono`}
-                  />
-                  {cpfError && (
-                    <p className="text-[11px] text-rose-600 font-medium mt-1">{cpfError}</p>
-                  )}
                 </div>
 
                 <div>

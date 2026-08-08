@@ -62,6 +62,7 @@ export interface Company {
   description?: string;
   active: boolean;
   createdAt: string;
+  modules?: string[];
 }
 
 export interface Job {
@@ -312,6 +313,7 @@ export interface Subscription {
   nextBillingDate: string;
   lastPaymentDate?: string;
   mercadopagoSubscriptionId?: string;
+  modules?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -392,6 +394,7 @@ export interface MasterBuilderConfig {
 export interface CompanyUser {
   id: string;
   email: string;
+  password?: string;
   name: string;
   companyId: string;
   role: 'master' | 'admin' | 'rh' | 'recruiter' | 'headhunter' | 'dp' | 'gestor' | 'visualizacao';

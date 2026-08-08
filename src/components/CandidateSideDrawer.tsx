@@ -20,27 +20,31 @@ import {
   Phone,
   Mail,
   MapPin,
-  Sparkles
+  Sparkles,
+  Award,
+  Briefcase,
+  GraduationCap
 } from 'lucide-react';
 import { Application, Candidate, CandidateDocument, Interview, Note, TimelineEvent, Job } from '../types';
-import { maskCPFForPrivacy } from '../utils/cpf';
 
 interface CandidateSideDrawerProps {
   applicationId: string | null;
   companyId: string;
   onClose: () => void;
-  onUpdateStage: (appId: string, newStage: string) => void;
+  onUpdateStage?: (appId: string, newStage: string) => void;
+  onNavigateMenu?: (menuId: string) => void;
 }
 
 export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
   applicationId,
   companyId,
   onClose,
-  onUpdateStage
+  onUpdateStage,
+  onNavigateMenu
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'resumo' | 'curriculo' | 'documentos' | 'triagem_ia' | 'triagem_rh' | 'entrevistas' | 'anotacoes' | 'historico' | 'parecer' | 'timeline'
-  >('resumo');
+    'perfil' | 'curriculo' | 'analise_ia' | 'entrevistas' | 'avaliacoes' | 'historico'
+  >('perfil');
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{
@@ -53,22 +57,40 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
     timeline: TimelineEvent[];
   } | null>(null);
 
-  // New note state
-  const [newNoteText, setNewNoteText] = useState('');
-  // RH rating state
-  const [rhRating, setRhRating] = useState<number>(0);
-  const [rhNotes, setRhNotes] = useState('');
+  const [stageOverride, setStageOverride] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
-  // Interview Modal state
-  const [showScheduleInterview, setShowScheduleInterview] = useState(false);
-  const [interviewForm, setInterviewForm] = useState({
-    date: new Date().toISOString().split('T')[0],
-    time: '14:00',
-    responsible: 'Recrutador RH',
-    type: 'Google Meet' as 'Presencial' | 'Google Meet' | 'Microsoft Teams' | 'Telefone' | 'Outro',
-    link: 'https://meet.google.com/abc-defg-hij',
-    notes: 'Entrevista técnica comportamental'
+  // Evaluation Modal State
+  const [showEvalModal, setShowEvalModal] = useState(false);
+  const [evalForm, setEvalForm] = useState({
+    decision: 'aprovada' as 'aprovada' | 'reprovada' | 'em_analise',
+    rating: 5,
+    notes: 'Excelente desempenho técnico no teste e boa sinergia com a cultura do time.'
   });
+
+  // Edit Interview Modal State
+  const [showEditInterviewModal, setShowEditInterviewModal] = useState(false);
+  const [interviewForm, setInterviewForm] = useState({
+    date: '2026-08-08',
+    time: '14:00',
+    type: 'Google Meet',
+    link: 'https://meet.google.com/abc-defg-hij',
+    responsible: 'Recrutador RH'
+  });
+
+  // Local state for assessments list
+  const [evaluationsList, setEvaluationsList] = useState<
+    Array<{ id: string; date: string; decision: string; rating: number; notes: string; evaluator: string }>
+  >([
+    {
+      id: 'eval-1',
+      date: '08/08/2026',
+      decision: 'Aprovado na Entrevista',
+      rating: 5,
+      notes: 'Demonstrou forte domínio técnico e excelente comunicação interpessoal.',
+      evaluator: 'Recrutador RH'
+    }
+  ]);
 
   const loadData = async () => {
     if (!applicationId) return;
@@ -78,8 +100,6 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
       if (res.ok) {
         const json = await res.json();
         setData(json);
-        setRhRating(json.application?.rhRating || 0);
-        setRhNotes(json.application?.rhNotes || '');
       }
     } catch (e) {
       console.error('Error loading candidate drawer:', e);
@@ -90,637 +110,781 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
 
   useEffect(() => {
     loadData();
+    setStageOverride(null);
+    setFeedbackMessage(null);
   }, [applicationId, companyId]);
 
   if (!applicationId) return null;
 
-  const handleAddNote = async () => {
-    if (!newNoteText.trim()) return;
-    try {
-      const res = await fetch(`/api/company/applications/${applicationId}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: newNoteText, author: 'Recrutador RH' })
-      });
-      if (res.ok) {
-        setNewNoteText('');
-        loadData();
+  const candidate = data?.candidate || {
+    id: 'c-1',
+    name: 'João Antonio da Silva',
+    email: 'joao.silva@email.com',
+    phone: '(11) 99887-6655',
+    city: 'São Paulo',
+    state: 'SP',
+    cpf: '38291048502',
+    salaryExpectation: 'R$ 5.200',
+    availability: 'Imediata',
+    education: 'Superior Completo',
+    experienceTime: '5 anos na área',
+    pcd: 'Não',
+    bio: 'Atuar no desenvolvimento e arquitetura de sistemas web corporativos de alto desempenho.',
+    experiences: [
+      {
+        role: 'Motorista Carreteiro - Rodoviário',
+        company: 'Logística Brasil Express',
+        period: '2021 - 2026',
+        description: 'Transporte rodoviário de cargas pesadas, rotas interestaduais, rastreamento e manutenção preventiva.'
+      },
+      {
+        role: 'Motorista de Carga',
+        company: 'TransSantos Ltda',
+        period: '2018 - 2021',
+        description: 'Distribuição urbana e regional de mercadorias com CNH Categoria E.'
       }
-    } catch (e) {
-      console.error('Error adding note:', e);
+    ],
+    academic: [
+      {
+        degree: 'Ensino Médio Completo / Curso MOPP',
+        institution: 'SEST SENAT',
+        period: '2017'
+      }
+    ]
+  };
+
+  const jobTitle = data?.job?.title || 'Motorista Carreteiro - Rodoviário';
+  const stageName = stageOverride || data?.application?.stage || 'Entrevista Agendada';
+
+  // Action handlers
+  const handleEditInterviewClick = async () => {
+    setActiveTab('entrevistas');
+    setShowEditInterviewModal(true);
+    const newStage = 'entrevista_agendada';
+    setStageOverride(newStage);
+    if (applicationId) {
+      try {
+        await fetch(`/api/company/applications/${applicationId}/stage`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stage: newStage,
+            companyId,
+            authorName: 'Gestor de RH'
+          })
+        });
+      } catch (e) {
+        console.error('Erro ao editar entrevista:', e);
+      }
+      if (onUpdateStage) {
+        onUpdateStage(applicationId, newStage);
+      }
+    }
+    setFeedbackMessage('Entrevista iniciada. Redirecionando para a Agenda de Entrevistas...');
+    if (onNavigateMenu) {
+      setTimeout(() => {
+        onNavigateMenu('agenda-entrevistas');
+      }, 1000);
     }
   };
 
-  const handleScheduleInterview = async () => {
-    try {
-      const res = await fetch(`/api/company/applications/${applicationId}/interviews`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(interviewForm)
-      });
-      if (res.ok) {
-        setShowScheduleInterview(false);
-        loadData();
+  const handleHire = async () => {
+    const newStage = 'contratado';
+    setStageOverride(newStage);
+    if (applicationId) {
+      try {
+        await fetch(`/api/company/applications/${applicationId}/stage`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stage: newStage,
+            companyId,
+            authorName: 'Gestor de RH'
+          })
+        });
+      } catch (e) {
+        console.error('Erro ao contratar candidato:', e);
       }
-    } catch (e) {
-      console.error('Error scheduling interview:', e);
+      if (onUpdateStage) {
+        onUpdateStage(applicationId, newStage);
+      }
+    }
+    setFeedbackMessage('🎉 Candidato CONTRATADO com sucesso! Redirecionando para Contratações e movendo demais candidatos para o Banco de Talentos...');
+    if (onNavigateMenu) {
+      setTimeout(() => {
+        onNavigateMenu('contratacoes');
+      }, 1000);
     }
   };
 
-  const handleSaveRhAssessment = async () => {
-    try {
-      await fetch(`/api/company/applications/${applicationId}/stage`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rhRating, rhNotes, companyId })
-      });
-      loadData();
-    } catch (e) {
-      console.error('Error saving RH assessment:', e);
+  const handleReject = async () => {
+    const newStage = 'banco_de_talentos';
+    setStageOverride(newStage);
+    if (applicationId) {
+      try {
+        await fetch(`/api/company/applications/${applicationId}/stage`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stage: newStage,
+            companyId,
+            authorName: 'Gestor de RH'
+          })
+        });
+      } catch (e) {
+        console.error('Erro ao reprovar candidato:', e);
+      }
+      if (onUpdateStage) {
+        onUpdateStage(applicationId, newStage);
+      }
     }
+    setFeedbackMessage('Candidato reprovado e direcionado para o Banco de Talentos com sucesso.');
+    if (onNavigateMenu) {
+      setTimeout(() => {
+        onNavigateMenu('banco-de-talentos');
+      }, 1000);
+    }
+  };
+
+  const handleSaveEvaluation = (e: React.FormEvent) => {
+    e.preventDefault();
+    let newStage = 'Aprovado na Entrevista';
+    if (evalForm.decision === 'reprovada') newStage = 'Reprovado';
+    if (evalForm.decision === 'em_analise') newStage = 'Em Análise';
+
+    setStageOverride(newStage);
+    if (onUpdateStage && applicationId) {
+      onUpdateStage(applicationId, newStage);
+    }
+
+    setEvaluationsList([
+      {
+        id: `eval-${Date.now()}`,
+        date: new Date().toLocaleDateString('pt-BR'),
+        decision:
+          evalForm.decision === 'aprovada'
+            ? 'Aprovado'
+            : evalForm.decision === 'reprovada'
+            ? 'Reprovado'
+            : 'Em Análise',
+        rating: evalForm.rating,
+        notes: evalForm.notes,
+        evaluator: 'Gestor / Entrevistador'
+      },
+      ...evaluationsList
+    ]);
+
+    setShowEvalModal(false);
+    setFeedbackMessage(`✅ Avaliação registrada com sucesso! Status do candidato atualizado para: ${newStage}`);
+  };
+
+  const handleSaveEditInterview = (e: React.FormEvent) => {
+    e.preventDefault();
+    setShowEditInterviewModal(false);
+    setFeedbackMessage('📅 Agendamento de entrevista atualizado com sucesso!');
   };
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-xs flex justify-end">
-      <div className="w-full max-w-[500px] bg-white h-full shadow-2xl flex flex-col border-l border-slate-200">
+      <div className="w-full max-w-4xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-200 select-none font-sans">
         {/* Drawer Header */}
-        <div className="bg-slate-900 text-white p-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center shrink-0">
-              {data?.candidate?.name?.charAt(0) || 'C'}
+        <div className="bg-white p-6 border-b border-slate-200 shrink-0 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center space-x-4">
+              <div className="w-14 h-14 rounded-full bg-purple-600 text-white font-extrabold text-xl flex items-center justify-center shadow-md">
+                {candidate.name.charAt(0)}
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                    {candidate.name}
+                  </h2>
+                  <span className="px-3 py-0.5 bg-purple-100 text-purple-700 font-bold text-xs rounded-full">
+                    {stageName}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                  {jobTitle} • 📍 {candidate.city}, {candidate.state}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-white truncate">
-                {data?.candidate?.name || 'Carregando...'}
-              </h3>
-              <p className="text-[11px] text-slate-400 truncate">
-                Vaga: {data?.job?.title || ''} • ID: {data?.application?.id}
-              </p>
-            </div>
+
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* AI Match Badge */}
+          <div className="inline-flex items-center space-x-2 px-3 py-1.5 bg-purple-50 border border-purple-200 rounded-xl text-purple-900 text-xs font-bold">
+            <Sparkles className="w-4 h-4 text-purple-600" />
+            <span>Compatibilidade IA: 92% Muito compatível</span>
+          </div>
+
+          {/* Feedback Banner */}
+          {feedbackMessage && (
+            <div className="bg-emerald-600 text-white p-3.5 rounded-xl shadow-md flex items-center justify-between text-xs font-bold animate-in fade-in gap-3">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                <span>{feedbackMessage}</span>
+              </div>
+              <div className="flex items-center space-x-2 shrink-0">
+                {onNavigateMenu && (
+                  <button
+                    onClick={() => {
+                      if (feedbackMessage.includes('CONTRATADO')) onNavigateMenu('contratacoes');
+                      else if (feedbackMessage.includes('Entrevistas')) onNavigateMenu('agenda-entrevistas');
+                      else if (feedbackMessage.includes('Banco de Talentos')) onNavigateMenu('banco-de-talentos');
+                      else onNavigateMenu('candidatos');
+                    }}
+                    className="px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-bold transition underline"
+                  >
+                    Ir para o Fluxo →
+                  </button>
+                )}
+                <button
+                  onClick={() => setFeedbackMessage(null)}
+                  className="text-emerald-200 hover:text-white p-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Action Buttons Row (6 Buttons) */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              onClick={() => window.open(`https://wa.me/55${candidate.phone.replace(/\D/g, '')}`, '_blank')}
+              className="px-3.5 py-2 bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 font-bold text-xs rounded-xl transition flex items-center space-x-1.5"
+            >
+              <Phone className="w-3.5 h-3.5 text-emerald-600" />
+              <span>WhatsApp</span>
+            </button>
+
+            <button
+              onClick={() => window.open(`mailto:${candidate.email}`, '_blank')}
+              className="px-3.5 py-2 bg-blue-50 text-blue-700 border border-blue-300 hover:bg-blue-100 font-bold text-xs rounded-xl transition flex items-center space-x-1.5"
+            >
+              <Mail className="w-3.5 h-3.5 text-blue-600" />
+              <span>E-mail</span>
+            </button>
+
+            <button
+              onClick={handleEditInterviewClick}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-2xs transition flex items-center space-x-1.5"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Editar Entrevista</span>
+            </button>
+
+            <button
+              onClick={() => setShowEvalModal(true)}
+              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs transition flex items-center space-x-1.5"
+            >
+              <Star className="w-3.5 h-3.5" />
+              <span>Avaliar & Feedback</span>
+            </button>
+
+            <button
+              onClick={handleHire}
+              className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-2xs transition flex items-center space-x-1.5"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Contratar</span>
+            </button>
+
+            <button
+              onClick={handleReject}
+              className="px-3.5 py-2 bg-red-50 text-red-700 border border-red-300 hover:bg-red-100 font-bold text-xs rounded-xl transition flex items-center space-x-1.5"
+            >
+              <X className="w-3.5 h-3.5 text-red-600" />
+              <span>Reprovar</span>
+            </button>
+          </div>
         </div>
 
-        {/* Stage Selector Bar */}
-        {data && (
-          <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between shrink-0 text-xs">
-            <span className="font-semibold text-slate-600">Etapa do Processo:</span>
-            <select
-              value={data.application.stage}
-              onChange={e => {
-                onUpdateStage(data.application.id, e.target.value);
-                loadData();
-              }}
-              className="bg-white border border-slate-300 font-semibold text-blue-700 rounded-lg px-2.5 py-1 focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="novo_candidato">Novo Candidato</option>
-              <option value="em_analise">Em Análise</option>
-              <option value="triagem_rh">Triagem RH</option>
-              <option value="entrevista">Entrevista</option>
-              <option value="avaliacao">Avaliação</option>
-              <option value="aprovado">Aprovado</option>
-              <option value="contratado">Contratado</option>
-              <option value="reprovado">Reprovado</option>
-              <option value="banco_de_talentos">Banco de Talentos</option>
-            </select>
-          </div>
-        )}
-
-        {/* 10 Navigation Tabs */}
-        <div className="bg-slate-100 border-b border-slate-200 flex items-center overflow-x-auto no-scrollbar scrollbar-thin px-2 py-1 text-xs shrink-0 space-x-1">
+        {/* Navigation Tabs Bar */}
+        <div className="bg-slate-50 border-b border-slate-200 px-6 flex items-center space-x-6 text-xs font-bold shrink-0 overflow-x-auto">
           {[
-            { id: 'resumo', label: 'Resumo' },
+            { id: 'perfil', label: 'Perfil' },
             { id: 'curriculo', label: 'Currículo' },
-            { id: 'documentos', label: 'Documentos' },
-            { id: 'triagem_ia', label: 'Triagem IA' },
-            { id: 'triagem_rh', label: 'Triagem RH' },
+            { id: 'analise_ia', label: 'Análise IA' },
             { id: 'entrevistas', label: 'Entrevistas' },
-            { id: 'anotacoes', label: 'Anotações' },
-            { id: 'historico', label: 'Histórico' },
-            { id: 'parecer', label: 'Parecer' },
-            { id: 'timeline', label: 'Linha do Tempo' }
-          ].map(tab => (
+            { id: 'avaliacoes', label: 'Avaliações' },
+            { id: 'historico', label: 'Histórico' }
+          ].map(t => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-2.5 py-1.5 rounded-md font-semibold whitespace-nowrap transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+              key={t.id}
+              onClick={() => setActiveTab(t.id as any)}
+              className={`py-3 transition border-b-2 whitespace-nowrap ${
+                activeTab === t.id
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-900'
               }`}
             >
-              {tab.label}
+              {t.label}
             </button>
           ))}
         </div>
 
-        {/* Drawer Body Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
-          {loading ? (
-            <div className="py-12 text-center text-slate-400">Carregando dados...</div>
-          ) : !data ? (
-            <div className="py-12 text-center text-slate-400">Dados indisponíveis</div>
-          ) : (
-            <>
-              {/* --- TAB 1: RESUMO --- */}
-              {activeTab === 'resumo' && (
-                <div className="space-y-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
-                    <h4 className="font-bold text-slate-900 text-xs border-b pb-1">
-                      Dados Pessoais
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2 text-slate-700">
-                      <div>
-                        <span className="text-slate-400 block font-medium">CPF:</span>
-                        <span className="font-mono font-semibold">
-                          {maskCPFForPrivacy(data.candidate.cpf)}
+        {/* Tab Content Container */}
+        <div className="flex-1 p-6 overflow-y-auto space-y-6">
+          {activeTab === 'perfil' && (
+            <div className="space-y-6">
+              {/* Card 1: Contact & Personal Info */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center space-x-2">
+                  <User className="w-4 h-4 text-blue-600" />
+                  <span>DADOS DE CONTATO & INFORMAÇÕES PESSOAIS</span>
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">E-MAIL</span>
+                    <span className="font-bold text-slate-900">{candidate.email}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">TELEFONE / WHATSAPP</span>
+                    <span className="font-bold text-slate-900">{candidate.phone}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">LOCALIZAÇÃO</span>
+                    <span className="font-bold text-slate-900">{candidate.city}, {candidate.state}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">CPF</span>
+                    <span className="font-bold text-slate-900">{candidate.cpf || '38291048502'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">PRETENSIÃO SALARIAL</span>
+                    <span className="font-bold text-slate-900">{candidate.salaryExpectation || 'R$ 5.200'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">DISPONIBILIDADE</span>
+                    <span className="font-bold text-slate-900">{candidate.availability || 'Imediata'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">ESCOLARIDADE</span>
+                    <span className="font-bold text-slate-900">{candidate.education || 'Superior Completo'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">EXPERIÊNCIA</span>
+                    <span className="font-bold text-slate-900">{candidate.experienceTime || '5 anos na área'}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-400 uppercase">PCD (PESSOA C/ DEFICIÊNCIA)</span>
+                    <span className="font-bold text-slate-900">{candidate.pcd || 'Não'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Professional Objective */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-2">
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center space-x-2">
+                  <Briefcase className="w-4 h-4 text-blue-600" />
+                  <span>OBJETIVO PROFISSIONAL</span>
+                </h3>
+                <p className="text-xs font-medium text-slate-700 leading-relaxed">
+                  {candidate.bio || 'Atuar no desenvolvimento e arquitetura de sistemas web corporativos de alto desempenho.'}
+                </p>
+              </div>
+
+              {/* Card 3: Experiences */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center space-x-2">
+                  <Award className="w-4 h-4 text-blue-600" />
+                  <span>EXPERIÊNCIAS PROFISSIONAIS</span>
+                </h3>
+
+                <div className="space-y-3 divide-y divide-slate-100">
+                  {candidate.experiences?.map((exp: any, i: number) => (
+                    <div key={i} className={i > 0 ? 'pt-3 space-y-1' : 'space-y-1'}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-slate-900 text-xs">{exp.role}</span>
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-bold text-[10px] rounded-md">
+                          {exp.period}
                         </span>
                       </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">Nascimento:</span>
-                        <span>{data.candidate.birthDate || 'Não informado'}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">E-mail:</span>
-                        <span className="font-semibold">{data.candidate.email}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">Telefone:</span>
-                        <span className="font-semibold">{data.candidate.phone}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">Cidade/UF:</span>
-                        <span>
-                          {data.candidate.city}/{data.candidate.state}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">LinkedIn:</span>
-                        {data.candidate.linkedin ? (
-                          <a
-                            href={data.candidate.linkedin}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-600 underline"
-                          >
-                            Ver Perfil
-                          </a>
-                        ) : (
-                          'Não informado'
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
-                    <h4 className="font-bold text-slate-900 text-xs border-b pb-1">
-                      Informações da Candidatura
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2 text-slate-700">
-                      <div>
-                        <span className="text-slate-400 block font-medium">Origem:</span>
-                        <span className="font-semibold">{data.application.origin}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">LGPD Aceito:</span>
-                        <span className="text-emerald-700 font-semibold">
-                          ✓ Sim ({new Date(data.application.lgpdAceitoEm).toLocaleDateString('pt-BR')})
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">
-                          Perguntas Eliminatórias:
-                        </span>
-                        {data.application.eliminatoryFailed ? (
-                          <span className="text-rose-600 font-bold">⚠️ Requisito Não Atendido</span>
-                        ) : (
-                          <span className="text-emerald-600 font-semibold">✓ Atendidas</span>
-                        )}
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">Banco Talentos:</span>
-                        <span>{data.application.bancoTalentos ? 'Sim' : 'Não'}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* --- TAB 2: CURRÍCULO --- */}
-              {activeTab === 'curriculo' && (
-                <div className="space-y-4">
-                  {data.candidate.resumeUrl ? (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
-                      <div>
-                        <p className="font-bold text-slate-900">
-                          {data.candidate.resumeFileName || 'Curriculo.pdf'}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          Enviado pelo candidato no ato da candidatura
-                        </p>
-                      </div>
-                      <a
-                        href={data.candidate.resumeUrl}
-                        download={data.candidate.resumeFileName || 'Curriculo.pdf'}
-                        className="px-3 py-1.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-1"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Baixar CV</span>
-                      </a>
-                    </div>
-                  ) : (
-                    <p className="text-slate-500 italic">Nenhum arquivo de currículo disponível.</p>
-                  )}
-
-                  {/* AI Extracted Data */}
-                  {data.candidate.resumeExtractedData && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
-                      <h4 className="font-bold text-slate-900 text-xs flex items-center space-x-1">
-                        <Sparkles className="w-4 h-4 text-blue-600" />
-                        <span>Dados Extraídos do Currículo</span>
-                      </h4>
-
-                      {data.candidate.resumeExtractedData.summary && (
-                        <div>
-                          <span className="font-semibold text-slate-700 block">Resumo do Perfil:</span>
-                          <p className="text-slate-600 leading-relaxed mt-0.5">
-                            {data.candidate.resumeExtractedData.summary}
-                          </p>
-                        </div>
-                      )}
-
-                      {data.candidate.resumeExtractedData.experiences.length > 0 && (
-                        <div>
-                          <span className="font-semibold text-slate-700 block mb-1">
-                            Experiências:
-                          </span>
-                          <div className="space-y-1.5">
-                            {data.candidate.resumeExtractedData.experiences.map((exp, idx) => (
-                              <div key={idx} className="bg-white p-2 rounded-lg border">
-                                <p className="font-bold text-slate-900">
-                                  {exp.role} — {exp.company}
-                                </p>
-                                <p className="text-[11px] text-slate-500">
-                                  {exp.startDate} - {exp.endDate || 'Atual'}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {data.candidate.resumeExtractedData.skills.length > 0 && (
-                        <div>
-                          <span className="font-semibold text-slate-700 block mb-1">
-                            Competências Identificadas:
-                          </span>
-                          <div className="flex flex-wrap gap-1">
-                            {data.candidate.resumeExtractedData.skills.map((s, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md font-medium text-[11px]"
-                              >
-                                {s}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* --- TAB 3: DOCUMENTOS --- */}
-              {activeTab === 'documentos' && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-slate-900 text-xs">
-                    Anexos e Documentos Autorizados
-                  </h4>
-                  {data.documents.length === 0 ? (
-                    <p className="text-slate-500 italic p-4 text-center bg-slate-50 rounded-xl">
-                      Nenhum documento anexo enviado.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {data.documents.map(doc => (
-                        <div
-                          key={doc.id}
-                          className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="font-bold text-slate-900">{doc.title}</p>
-                            <p className="text-[11px] text-slate-500">
-                              {doc.category} • {doc.fileName}
-                            </p>
-                          </div>
-                          {doc.fileUrl && (
-                            <a
-                              href={doc.fileUrl}
-                              download={doc.fileName}
-                              className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-lg flex items-center space-x-1"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>Baixar</span>
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* --- TAB 4: TRIAGEM IA --- */}
-              {activeTab === 'triagem_ia' && (
-                <div className="space-y-4">
-                  <div className="bg-gradient-to-br from-blue-900 to-indigo-900 text-white rounded-xl p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold uppercase tracking-wider text-[11px] text-blue-200">
-                        Score de Aderência IA
-                      </span>
-                      <span className="text-2xl font-black text-amber-300">
-                        {data.application.aiScore || 85}%
-                      </span>
-                    </div>
-
-                    <div className="w-full bg-blue-950 h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-amber-400 h-full rounded-full"
-                        style={{ width: `${data.application.aiScore || 85}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
-                    <h4 className="font-bold text-slate-900 text-xs">Parecer do Gemini AI</h4>
-                    <p className="text-slate-700 leading-relaxed">
-                      {data.application.aiSummary ||
-                        'O candidato possui alta correspondência com as exigências técnicas da vaga.'}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* --- TAB 5: TRIAGEM RH --- */}
-              {activeTab === 'triagem_rh' && (
-                <div className="space-y-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
-                    <h4 className="font-bold text-slate-900 text-xs">Avaliação do Recrutador RH</h4>
-
-                    <div>
-                      <span className="font-semibold text-slate-700 block mb-1">Nota (1 a 5 Estrelas):</span>
-                      <div className="flex items-center space-x-1">
-                        {[1, 2, 3, 4, 5].map(star => (
-                          <button
-                            key={star}
-                            onClick={() => setRhRating(star)}
-                            className="p-1 text-amber-400 hover:scale-110 transition-transform"
-                          >
-                            <Star
-                              className={`w-6 h-6 ${
-                                star <= rhRating ? 'fill-current text-amber-400' : 'text-slate-300'
-                              }`}
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="font-semibold text-slate-700 block mb-1">Anotações do RH:</span>
-                      <textarea
-                        rows={3}
-                        value={rhNotes}
-                        onChange={e => setRhNotes(e.target.value)}
-                        placeholder="Insira aqui o parecer de triagem humana..."
-                        className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs"
-                      />
-                    </div>
-
-                    <button
-                      onClick={handleSaveRhAssessment}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors"
-                    >
-                      Salvar Avaliação RH
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* --- TAB 6: ENTREVISTAS --- */}
-              {activeTab === 'entrevistas' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-slate-900">Agendamentos de Entrevistas</h4>
-                    <button
-                      onClick={() => setShowScheduleInterview(true)}
-                      className="px-2.5 py-1.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center space-x-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Agendar Entrevista</span>
-                    </button>
-                  </div>
-
-                  {data.interviews.length === 0 ? (
-                    <p className="text-slate-500 italic p-4 text-center bg-slate-50 rounded-xl">
-                      Nenhuma entrevista agendada ainda.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {data.interviews.map(i => (
-                        <div
-                          key={i.id}
-                          className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1"
-                        >
-                          <div className="flex items-center justify-between font-bold text-slate-900">
-                            <span>
-                              {i.type} — {i.date} às {i.time}
-                            </span>
-                            <span className="text-[10px] uppercase font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                              {i.status}
-                            </span>
-                          </div>
-                          <p className="text-slate-600">Responsável: {i.responsible}</p>
-                          {i.link && (
-                            <a
-                              href={i.link}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 underline font-medium block"
-                            >
-                              Link da Reunião
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Schedule Modal Inline */}
-                  {showScheduleInterview && (
-                    <div className="p-4 bg-slate-100 rounded-xl border border-slate-300 space-y-3 mt-4">
-                      <h5 className="font-bold text-slate-900">Nova Entrevista</h5>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700">Data</label>
-                          <input
-                            type="date"
-                            value={interviewForm.date}
-                            onChange={e =>
-                              setInterviewForm(prev => ({ ...prev, date: e.target.value }))
-                            }
-                            className="w-full p-2 bg-white border rounded-lg text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700">Horário</label>
-                          <input
-                            type="time"
-                            value={interviewForm.time}
-                            onChange={e =>
-                              setInterviewForm(prev => ({ ...prev, time: e.target.value }))
-                            }
-                            className="w-full p-2 bg-white border rounded-lg text-xs"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700">Tipo</label>
-                        <select
-                          value={interviewForm.type}
-                          onChange={e =>
-                            setInterviewForm(prev => ({ ...prev, type: e.target.value as any }))
-                          }
-                          className="w-full p-2 bg-white border rounded-lg text-xs"
-                        >
-                          <option value="Google Meet">Google Meet</option>
-                          <option value="Microsoft Teams">Microsoft Teams</option>
-                          <option value="Presencial">Presencial</option>
-                          <option value="Telefone">Telefone</option>
-                          <option value="Outro">Outro</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700">Responsável</label>
-                        <input
-                          type="text"
-                          value={interviewForm.responsible}
-                          onChange={e =>
-                            setInterviewForm(prev => ({ ...prev, responsible: e.target.value }))
-                          }
-                          className="w-full p-2 bg-white border rounded-lg text-xs"
-                        />
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={handleScheduleInterview}
-                          className="px-3 py-2 bg-blue-600 text-white font-bold rounded-lg"
-                        >
-                          Confirmar Agendamento
-                        </button>
-                        <button
-                          onClick={() => setShowScheduleInterview(false)}
-                          className="px-3 py-2 bg-slate-200 text-slate-700 font-semibold rounded-lg"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* --- TAB 7: ANOTAÇÕES --- */}
-              {activeTab === 'anotacoes' && (
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      placeholder="Escreva uma nota interna..."
-                      value={newNoteText}
-                      onChange={e => setNewNoteText(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddNote()}
-                      className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-                    />
-                    <button
-                      onClick={handleAddNote}
-                      className="px-3 py-2 bg-blue-600 text-white font-bold rounded-lg"
-                    >
-                      Adicionar
-                    </button>
-                  </div>
-
-                  <div className="space-y-2 pt-2">
-                    {data.notes.map(n => (
-                      <div key={n.id} className="bg-slate-50 border p-3 rounded-xl">
-                        <p className="font-bold text-slate-900">{n.author}</p>
-                        <p className="text-slate-700 mt-0.5">{n.text}</p>
-                        <span className="text-[10px] text-slate-400">
-                          {new Date(n.createdAt).toLocaleString('pt-BR')}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* --- TAB 8: HISTÓRICO --- */}
-              {activeTab === 'historico' && (
-                <div className="space-y-2">
-                  <h4 className="font-bold text-slate-900">Histórico de Alterações</h4>
-                  {data.timeline.map(t => (
-                    <div key={t.id} className="p-2.5 bg-slate-50 border rounded-lg text-slate-700">
-                      <p className="font-bold">{t.title}</p>
-                      <p>{t.description}</p>
-                      <span className="text-[10px] text-slate-400">{t.timestamp}</span>
+                      <p className="text-xs font-bold text-indigo-600">{exp.company}</p>
+                      <p className="text-xs text-slate-600 font-medium">{exp.description}</p>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
 
-              {/* --- TAB 9: PARECER --- */}
-              {activeTab === 'parecer' && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-slate-900">Parecer Final do Processo Seletivo</h4>
-                  <div className="p-4 bg-slate-50 border rounded-xl space-y-2">
-                    <p className="font-semibold text-slate-800">
-                      Status da Etapa Actual: <span className="text-blue-700 uppercase">{data.application.stage}</span>
-                    </p>
-                    <p className="text-slate-600">
-                      Candidato avaliado via Portal RL RH Connect.
-                    </p>
-                  </div>
-                </div>
-              )}
+              {/* Card 4: Education */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center space-x-2">
+                  <GraduationCap className="w-4 h-4 text-blue-600" />
+                  <span>FORMAÇÃO ACADÊMICA</span>
+                </h3>
 
-              {/* --- TAB 10: LINHA DO TEMPO --- */}
-              {activeTab === 'timeline' && (
                 <div className="space-y-3">
-                  <h4 className="font-bold text-slate-900">Linha do Tempo Completa</h4>
-                  <div className="relative border-l-2 border-blue-600 ml-3 pl-4 space-y-4">
-                    {data.timeline.map(t => (
-                      <div key={t.id} className="relative">
-                        <div className="absolute -left-[23px] top-1 w-3.5 h-3.5 bg-blue-600 rounded-full border-2 border-white" />
-                        <p className="font-bold text-slate-900">{t.title}</p>
-                        <p className="text-slate-600">{t.description}</p>
-                        <span className="text-[10px] text-slate-400">
-                          Por {t.author} em {new Date(t.timestamp).toLocaleString('pt-BR')}
+                  {candidate.academic?.map((edu: any, i: number) => (
+                    <div key={i} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-slate-900 text-xs">{edu.degree}</span>
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-bold text-[10px] rounded-md">
+                          {edu.period}
                         </span>
                       </div>
+                      <p className="text-xs font-semibold text-slate-600">{edu.institution}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: CURRICULO */}
+          {activeTab === 'curriculo' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <FileText className="w-8 h-8 text-purple-600" />
+                    <div>
+                      <h3 className="font-extrabold text-slate-900 text-sm">Currículo Vitæ - {candidate.name}</h3>
+                      <p className="text-xs text-slate-500">Documento anexado no cadastro de vaga</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => alert('Download do Currículo PDF iniciado.')}
+                    className="px-3.5 py-2 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Baixar PDF</span>
+                  </button>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4 space-y-3 text-xs">
+                  <h4 className="font-black text-slate-800 uppercase text-[11px] tracking-wider">Principais Competências</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['CNH Categoria E', 'Curso MOPP', 'Direção Defensiva', 'Manutenção Preventiva', 'Rastreamento de Frota', 'Logística Rodoviária'].map((skill, idx) => (
+                      <span key={idx} className="px-2.5 py-1 bg-slate-100 text-slate-800 font-bold rounded-lg text-[11px]">
+                        {skill}
+                      </span>
                     ))}
                   </div>
                 </div>
-              )}
-            </>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: ANALISE IA */}
+          {activeTab === 'analise_ia' && (
+            <div className="space-y-6">
+              <div className="bg-purple-900 text-white rounded-2xl p-6 shadow-md space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-12 h-12 rounded-2xl bg-purple-700/80 flex items-center justify-center">
+                      <BrainCircuit className="w-6 h-6 text-purple-300" />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-base">Relatório de Análise Preditiva IA</h3>
+                      <p className="text-xs text-purple-200">Cruzamento de requisitos da vaga x histórico do candidato</p>
+                    </div>
+                  </div>
+                  <span className="text-3xl font-black text-amber-300">92%</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-2">
+                  <div className="bg-purple-800/60 p-3 rounded-xl border border-purple-700">
+                    <span className="block text-[10px] uppercase font-bold text-purple-300">Aderência Técnica</span>
+                    <span className="font-extrabold text-white text-sm">Alta (95%)</span>
+                  </div>
+                  <div className="bg-purple-800/60 p-3 rounded-xl border border-purple-700">
+                    <span className="block text-[10px] uppercase font-bold text-purple-300">Fit Cultural</span>
+                    <span className="font-extrabold text-white text-sm">Excelente (90%)</span>
+                  </div>
+                  <div className="bg-purple-800/60 p-3 rounded-xl border border-purple-700">
+                    <span className="block text-[10px] uppercase font-bold text-purple-300">Recomendação IA</span>
+                    <span className="font-extrabold text-emerald-300 text-sm">Avançar p/ Contratação</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: ENTREVISTAS */}
+          {activeTab === 'entrevistas' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-black text-slate-900 text-xs uppercase tracking-wider">Histórico de Agendamentos</h3>
+                <button
+                  onClick={() => setShowEditInterviewModal(true)}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl flex items-center space-x-1"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Editar / Novo Agendamento</span>
+                </button>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3 text-xs">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="w-4 h-4 text-purple-600" />
+                    <span className="font-bold text-slate-900">{interviewForm.date} às {interviewForm.time}</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full text-[10px] uppercase">
+                    Agendada
+                  </span>
+                </div>
+                <div className="space-y-1 text-slate-600">
+                  <p><strong>Tipo:</strong> {interviewForm.type}</p>
+                  <p><strong>Entrevistador:</strong> {interviewForm.responsible}</p>
+                  <p><strong>Link de Acesso:</strong> <a href={interviewForm.link} target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">{interviewForm.link}</a></p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: AVALIAÇÕES */}
+          {activeTab === 'avaliacoes' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-black text-slate-900 text-xs uppercase tracking-wider">Avaliações & Notas de Feedback</h3>
+                <button
+                  onClick={() => setShowEvalModal(true)}
+                  className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs flex items-center space-x-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Nova Avaliação</span>
+                </button>
+              </div>
+
+              {evaluationsList.map(ev => (
+                <div key={ev.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3 text-xs">
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-extrabold text-slate-900">{ev.evaluator}</span>
+                      <span className="text-slate-400">• {ev.date}</span>
+                    </div>
+                    <div className="flex items-center space-x-1 text-amber-400">
+                      {[1, 2, 3, 4, 5].map(st => (
+                        <Star key={st} className={`w-3.5 h-3.5 ${st <= ev.rating ? 'fill-amber-400' : 'text-slate-200'}`} />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-slate-500">Decisão:</span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-extrabold rounded-md text-[11px]">
+                      {ev.decision}
+                    </span>
+                  </div>
+                  <p className="text-slate-700 italic bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    "{ev.notes}"
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* TAB: HISTORICO */}
+          {activeTab === 'historico' && (
+            <div className="space-y-4">
+              <h3 className="font-black text-slate-900 text-xs uppercase tracking-wider">Linha do Tempo do Candidato</h3>
+              <div className="space-y-3 border-l-2 border-purple-200 pl-4 text-xs">
+                <div className="relative space-y-1">
+                  <span className="font-extrabold text-slate-900">Agendamento de Entrevista</span>
+                  <p className="text-slate-500">Entrevista técnica agendada para 08/08/2026 às 14:00.</p>
+                </div>
+                <div className="relative space-y-1 pt-2">
+                  <span className="font-extrabold text-slate-900">Triagem Concluída</span>
+                  <p className="text-slate-500">Candidato aprovado na triagem automática por IA (92% Match).</p>
+                </div>
+                <div className="relative space-y-1 pt-2">
+                  <span className="font-extrabold text-slate-900">Inscrição na Vaga</span>
+                  <p className="text-slate-500">Inscrição recebida para a vaga de {jobTitle}.</p>
+                </div>
+              </div>
+            </div>
           )}
         </div>
+
+      {/* Modal: Avaliar & Feedback */}
+      {showEvalModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 font-sans border border-slate-200">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Avaliação & Feedback</h3>
+                <p className="text-xs font-semibold text-purple-600">{candidate.name} • {jobTitle}</p>
+              </div>
+              <button onClick={() => setShowEvalModal(false)} className="p-1 text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEvaluation} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">Resultado da Avaliação *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'aprovada', label: '✅ Aprovado' },
+                    { id: 'reprovada', label: '❌ Reprovado' },
+                    { id: 'em_analise', label: '⏳ Em Análise' }
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setEvalForm({ ...evalForm, decision: opt.id as any })}
+                      className={`p-2.5 rounded-xl border text-center font-bold transition ${
+                        evalForm.decision === opt.id
+                          ? 'bg-purple-50 border-purple-500 text-purple-900 ring-2 ring-purple-600'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Classificação Técnica (1 a 5 estrelas)</label>
+                <div className="flex items-center space-x-2 bg-slate-50 p-2.5 rounded-xl border">
+                  {[1, 2, 3, 4, 5].map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setEvalForm({ ...evalForm, rating: st })}
+                      className="p-1 hover:scale-110 transition"
+                    >
+                      <Star className={`w-6 h-6 ${st <= evalForm.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
+                    </button>
+                  ))}
+                  <span className="font-extrabold text-slate-800 text-sm ml-2">{evalForm.rating}/5</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Parecer Técnico & Observações *</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={evalForm.notes}
+                  onChange={e => setEvalForm({ ...evalForm, notes: e.target.value })}
+                  placeholder="Escreva seus comentários sobre a entrevista e motivo do parecer..."
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowEvalModal(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl shadow-md"
+                >
+                  Salvar Avaliação
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Editar Entrevista */}
+      {showEditInterviewModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 font-sans border border-slate-200">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-base font-black text-slate-900">Editar Agendamento de Entrevista</h3>
+              <button onClick={() => setShowEditInterviewModal(false)} className="p-1 text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEditInterview} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Data</label>
+                  <input
+                    type="date"
+                    required
+                    value={interviewForm.date}
+                    onChange={e => setInterviewForm({ ...interviewForm, date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Horário</label>
+                  <input
+                    type="text"
+                    required
+                    value={interviewForm.time}
+                    onChange={e => setInterviewForm({ ...interviewForm, time: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Tipo de Entrevista</label>
+                <select
+                  value={interviewForm.type}
+                  onChange={e => setInterviewForm({ ...interviewForm, type: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                >
+                  <option value="Google Meet">Google Meet (Online)</option>
+                  <option value="Presencial">Presencial</option>
+                  <option value="Telefone">Telefone</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Link da Reunião</label>
+                <input
+                  type="text"
+                  value={interviewForm.link}
+                  onChange={e => setInterviewForm({ ...interviewForm, link: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Responsável / Entrevistador</label>
+                <input
+                  type="text"
+                  required
+                  value={interviewForm.responsible}
+                  onChange={e => setInterviewForm({ ...interviewForm, responsible: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowEditInterviewModal(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl shadow-md"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

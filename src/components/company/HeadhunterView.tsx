@@ -13,32 +13,52 @@ import {
   Send,
   Star,
   Plus,
-  CheckCircle2
+  CheckCircle2,
+  DollarSign,
+  TrendingUp,
+  ShieldAlert,
+  Users,
+  ShieldCheck,
+  RefreshCw,
+  Clock,
+  ArrowUpRight,
+  ArrowDownRight
 } from 'lucide-react';
 import { Job, Candidate, Application } from '../../types';
 
 interface Props {
   companyId: string;
   onOpenDrawer: (appId: string) => void;
+  initialSubTab?: 'visão_geral' | 'projetos' | 'clientes' | 'financeiro' | 'portal_cliente';
 }
 
-export const HeadhunterView: React.FC<Props> = ({ companyId, onOpenDrawer }) => {
+export const HeadhunterView: React.FC<Props> = ({ companyId, onOpenDrawer, initialSubTab = 'visão_geral' }) => {
+  const [subTab, setSubTab] = useState<'visão_geral' | 'projetos' | 'clientes' | 'financeiro' | 'portal_cliente'>(initialSubTab);
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+  const [finSubTab, setFinSubTab] = useState<'indicadores' | 'receitas' | 'despesas' | 'comissoes' | 'garantias' | 'relatorios'>('indicadores');
+
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [applications, setApplications] = useState<any[]>([]);
   const [talents, setTalents] = useState<Candidate[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'headhunt_pipeline' | 'executive_search'>('headhunt_pipeline');
 
-  // Sourcing Modal State
-  const [sourcingCandidate, setSourcingCandidate] = useState<Candidate | null>(null);
-  const [sourcingJobId, setSourcingJobId] = useState<string>('');
+  // Filters for Projetos
+  const [origemFilter, setOrigemFilter] = useState('todas');
+  const [statusProjFilter, setStatusProjFilter] = useState('todas');
+
+  // Filters for Clientes
+  const [clienteFilter, setClienteFilter] = useState('todos');
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Fetch Jobs
       const jobsRes = await fetch(`/api/company/jobs?companyId=${companyId}`);
       if (jobsRes.ok) {
         const jData = await jobsRes.json();
@@ -48,7 +68,6 @@ export const HeadhunterView: React.FC<Props> = ({ companyId, onOpenDrawer }) => 
         }
       }
 
-      // Fetch Talent Pool
       const poolRes = await fetch(`/api/company/candidates/pool?companyId=${companyId}`);
       if (poolRes.ok) {
         const pData = await poolRes.json();
@@ -61,293 +80,417 @@ export const HeadhunterView: React.FC<Props> = ({ companyId, onOpenDrawer }) => 
     }
   };
 
-  const fetchApplicationsForJob = async (jobId: string) => {
-    if (!jobId) return;
-    try {
-      const res = await fetch(`/api/company/jobs/${jobId}/applications?companyId=${companyId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setApplications(data.applications || []);
-      }
-    } catch (e) {
-      console.error('Error fetching applications for headhunter:', e);
-    }
-  };
-
   useEffect(() => {
     fetchData();
   }, [companyId]);
 
-  useEffect(() => {
-    if (selectedJobId) {
-      fetchApplicationsForJob(selectedJobId);
-    }
-  }, [selectedJobId]);
-
-  const handleSourceTalent = async () => {
-    if (!sourcingCandidate || !sourcingJobId) return;
-    try {
-      const res = await fetch('/api/public/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId: sourcingJobId,
-          name: sourcingCandidate.name,
-          cpf: sourcingCandidate.cpf,
-          birthDate: sourcingCandidate.birthDate,
-          email: sourcingCandidate.email,
-          phone: sourcingCandidate.phone,
-          city: sourcingCandidate.city,
-          state: sourcingCandidate.state,
-          resumeUrl: sourcingCandidate.resumeUrl,
-          resumeFileName: sourcingCandidate.resumeFileName,
-          bancoTalentos: true,
-          lgpdAceito: true,
-          origin: 'indicação'
-        })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        alert(`Candidato ${sourcingCandidate.name} vinculado à vaga como indicação de Headhunter com sucesso!`);
-        setSourcingCandidate(null);
-        fetchApplicationsForJob(selectedJobId);
-      } else {
-        alert(data.error || 'Erro ao vincular candidato.');
-      }
-    } catch (e) {
-      alert('Erro ao realizar indicação de headhunter.');
-    }
-  };
-
-  const selectedJob = jobs.find(j => j.id === selectedJobId);
-
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-xs font-semibold mb-2 border border-purple-400/20">
-            <Award className="w-3.5 h-3.5" /> Módulo Headhunting Especializado
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Executive Search & Talent Sourcing</h1>
-          <p className="text-purple-200 text-sm mt-1 max-w-2xl">
-            Busca ativa de talentos de alto nível. Os dados de candidatos e vagas são compartilhados nativamente com o ATS Recrutamento e Seleção.
-          </p>
-        </div>
-
-        {/* Tab Switcher */}
-        <div className="bg-white/10 p-1 rounded-xl border border-white/20 flex gap-1">
+    <div className="space-y-6 select-none font-sans">
+      {/* Headhunter Sub-Navigation Bar */}
+      <div className="bg-white border-b border-slate-200 px-4 py-2 rounded-2xl shadow-2xs flex items-center space-x-2 overflow-x-auto">
+        {[
+          { id: 'visão_geral', label: 'Visão Geral' },
+          { id: 'projetos', label: 'Projetos' },
+          { id: 'clientes', label: 'Clientes' },
+          { id: 'financeiro', label: 'Financeiro' },
+          { id: 'portal_cliente', label: 'Portal do Cliente' }
+        ].map(tab => (
           <button
-            onClick={() => setActiveTab('headhunt_pipeline')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition ${
-              activeTab === 'headhunt_pipeline'
-                ? 'bg-white text-slate-900 shadow'
-                : 'text-white hover:bg-white/10'
+            key={tab.id}
+            onClick={() => setSubTab(tab.id as any)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+              subTab === tab.id
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            Pipeline por Vaga
+            {tab.label}
           </button>
-          <button
-            onClick={() => setActiveTab('executive_search')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition ${
-              activeTab === 'executive_search'
-                ? 'bg-white text-slate-900 shadow'
-                : 'text-white hover:bg-white/10'
-            }`}
-          >
-            Busca Ativa / Sourcing
-          </button>
-        </div>
+        ))}
       </div>
 
-      {activeTab === 'headhunt_pipeline' ? (
+      {/* SUB-TAB: VISÃO GERAL */}
+      {subTab === 'visão_geral' && (
         <div className="space-y-6">
-          {/* Job Selector Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0">
-                Selecione a Vaga:
-              </span>
-              <select
-                value={selectedJobId}
-                onChange={e => setSelectedJobId(e.target.value)}
-                className="w-full sm:w-80 px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                {jobs.map(j => (
-                  <option key={j.id} value={j.id}>
-                    {j.title} ({j.city}/{j.state})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedJob && (
-              <div className="flex items-center gap-4 text-xs font-medium text-slate-600">
-                <span className="px-3 py-1 bg-purple-50 text-purple-700 font-bold rounded-full border border-purple-200">
-                  {selectedJob.area}
-                </span>
-                <span>{selectedJob.openingsCount} vaga(s)</span>
-                <span>{applications.length} candidato(s) em processo</span>
+          <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-xs font-semibold mb-2 border border-purple-400/20">
+                <Award className="w-3.5 h-3.5" /> Módulo Headhunting Especializado
               </div>
-            )}
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Executive Search & Talent Sourcing</h1>
+              <p className="text-purple-200 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
+                Busca ativa de talentos de alto nível. Os dados de candidatos e vagas são compartilhados nativamente com o ATS Recrutamento e Seleção.
+              </p>
+            </div>
           </div>
 
-          {/* Applications Cards in Headhunter View */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <Star className="w-5 h-5 text-purple-600 fill-purple-600" />
-              Candidatos Mapeados em Headhunting ({applications.length})
-            </h3>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+            <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+              Pipeline de Mapeamento Ativo
+            </h2>
+            <p className="text-xs text-slate-500">
+              Selecione uma vaga para visualizar e mapear talentos diretamente do Banco de Talentos.
+            </p>
 
-            {applications.length === 0 ? (
-              <div className="text-center py-12 border border-dashed border-slate-200 rounded-xl">
-                <p className="text-sm text-slate-500 font-medium">Nenhum candidato mapeado para esta vaga ainda.</p>
-                <p className="text-xs text-slate-400 mt-1">Use a aba "Busca Ativa / Sourcing" para prospectar talentos no Banco.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {applications.map(app => (
-                  <div
-                    key={app.id}
-                    className="p-5 bg-slate-50/80 hover:bg-slate-50 rounded-2xl border border-slate-200 hover:border-purple-300 transition shadow-sm hover:shadow flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex justify-between items-start gap-2 mb-2">
-                        <div>
-                          <h4 className="font-bold text-slate-900 text-sm">{app.candidate?.name || 'Candidato'}</h4>
-                          <p className="text-xs text-slate-500">{app.candidate?.city}/{app.candidate?.state}</p>
-                        </div>
-                        <span className="px-2.5 py-1 bg-purple-100 text-purple-800 text-[11px] font-bold rounded-full uppercase">
-                          {app.stage.replace('_', ' ')}
-                        </span>
-                      </div>
-
-                      <div className="space-y-1 text-xs text-slate-600 my-3">
-                        <p><strong className="text-slate-800">Origem:</strong> {app.origin}</p>
-                        <p><strong className="text-slate-800">Pretensão Salarial:</strong> {app.candidate?.salaryExpectation || 'Não informada'}</p>
-                        <p><strong className="text-slate-800">Cargo Atual:</strong> {app.candidate?.currentRole || 'N/I'}</p>
-                        {app.aiScore !== undefined && (
-                          <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-lg border border-emerald-200 text-xs">
-                            <Sparkles className="w-3.5 h-3.5" /> AI Match: {app.aiScore}%
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
-                      <button
-                        onClick={() => onOpenDrawer(app.id)}
-                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-xl transition flex items-center gap-1.5"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> Avaliar Parecer
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Executive Search / Sourcing Tab */
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Prospectar Talentos no Banco de Dados Central</h3>
-
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
-                placeholder="Buscar talentos por nome, cargo, cidade, habilidades..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            {/* Talent Pool Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-              {talents
-                .filter(t =>
-                  searchTerm
-                    ? t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      t.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      (t.currentRole && t.currentRole.toLowerCase().includes(searchTerm.toLowerCase()))
-                    : true
-                )
-                .map(talent => (
-                  <div key={talent.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start">
-                        <h4 className="font-bold text-slate-900 text-sm">{talent.name}</h4>
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-200 text-slate-700 rounded">
-                          {talent.id}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">{talent.city}/{talent.state}</p>
-                      <p className="text-xs font-semibold text-slate-700 mt-2">
-                        Cargo: {talent.currentRole || 'Profissional Cadastrado'}
-                      </p>
-                      <p className="text-xs text-slate-600">Expectativa: {talent.salaryExpectation || 'R$ 5.000+'}</p>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end">
-                      <button
-                        onClick={() => {
-                          setSourcingCandidate(talent);
-                          if (jobs.length > 0) setSourcingJobId(jobs[0].id);
-                        }}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs rounded-xl transition flex items-center gap-1"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Indicar para Vaga
-                      </button>
-                    </div>
-                  </div>
-                ))}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {jobs.map(j => (
+                <div
+                  key={j.id}
+                  onClick={() => setSelectedJobId(j.id)}
+                  className={`p-4 rounded-xl border cursor-pointer transition ${
+                    selectedJobId === j.id
+                      ? 'border-purple-600 bg-purple-50/50 shadow-2xs'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold text-purple-600 uppercase block">{j.department || 'Executive'}</span>
+                  <h3 className="font-bold text-slate-900 text-sm mt-0.5">{j.title}</h3>
+                  <span className="text-xs text-slate-500 block mt-2">👥 {j.applicationsCount || 0} candidatos em seleção</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal to Source Talent */}
-      {sourcingCandidate && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Indicação de Headhunter</h3>
-            <p className="text-xs text-slate-600">
-              Vincular o talento <strong className="text-slate-900">{sourcingCandidate.name}</strong> a uma vaga aberta da empresa:
-            </p>
-
+      {/* SUB-TAB: PROJETOS */}
+      {subTab === 'projetos' && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Selecione a Vaga:</label>
-              <select
-                value={sourcingJobId}
-                onChange={e => setSourcingJobId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm"
-              >
-                {jobs.map(j => (
-                  <option key={j.id} value={j.id}>{j.title} ({j.city}/{j.state})</option>
-                ))}
-              </select>
+              <div className="flex items-center space-x-2">
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                  Projetos de Executive Search & Vagas
+                </h1>
+                <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-full">
+                  {jobs.length} registros
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Visão completa unificada de vagas internas, contratações para clientes e projetos de busca ativa.
+              </p>
             </div>
 
-            <div className="flex justify-end gap-3 pt-3">
-              <button
-                onClick={() => setSourcingCandidate(null)}
-                className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl"
-              >
-                Cancelar
+            <button className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 self-start md:self-auto">
+              <Plus className="w-4 h-4" />
+              <span>Cadastrar Nova Vaga / Projeto</span>
+            </button>
+          </div>
+
+          {/* Filters Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                placeholder="Buscar por cargo, empresa cliente ou responsável..."
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-bold pt-2 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-400 text-[11px] uppercase tracking-wider">ORIGEM:</span>
+                {['Todas', 'Vagas internas', 'Recrutamento para clientes', 'Headhunter / Busca ativa'].map((o, idx) => (
+                  <button
+                    key={idx}
+                    className={`px-3 py-1.5 rounded-full transition ${
+                      idx === 0 ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {o}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-400 text-[11px] uppercase tracking-wider">STATUS:</span>
+                {['Todas', 'Em andamento', 'Próximas do prazo', 'Concluídas', 'Canceladas'].map((s, idx) => (
+                  <button
+                    key={idx}
+                    className={`px-3 py-1.5 rounded-full transition ${
+                      idx === 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th className="p-4">CARGO / PROJETO</th>
+                    <th className="p-4">EMPRESA / CLIENTE</th>
+                    <th className="p-4">ORIGEM</th>
+                    <th className="p-4">RESPONSÁVEL</th>
+                    <th className="p-4">PRAZO SLA</th>
+                    <th className="p-4">CANDIDATOS</th>
+                    <th className="p-4">STATUS</th>
+                    <th className="p-4">HONORÁRIOS</th>
+                    <th className="p-4 text-right">AÇÕES</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                  {jobs.map(j => (
+                    <tr key={j.id} className="hover:bg-slate-50/80 transition">
+                      <td className="p-4 font-bold text-slate-900">{j.title}</td>
+                      <td className="p-4 text-slate-600">{j.department || 'InovaTech Software'}</td>
+                      <td className="p-4">
+                        <span className="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-200 font-bold text-[10px] rounded-full uppercase">
+                          Headhunter
+                        </span>
+                      </td>
+                      <td className="p-4 text-slate-600">Mariana Lima</td>
+                      <td className="p-4 text-slate-600">15 dias</td>
+                      <td className="p-4 font-bold text-blue-600">{j.applicationsCount || 0}</td>
+                      <td className="p-4">
+                        <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded-full uppercase">
+                          {j.status}
+                        </span>
+                      </td>
+                      <td className="p-4 font-bold text-slate-900">R$ 15.000,00</td>
+                      <td className="p-4 text-right">
+                        <button className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg transition">
+                          Gerenciar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: CLIENTES */}
+      {subTab === 'clientes' && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                Carteira de Clientes Headhunter
+              </h1>
+              <p className="text-xs text-slate-500 mt-1">
+                Gestão cadastral, condições comerciais negociadas, acordos contratuais e histórico de relacionamento.
+              </p>
+            </div>
+
+            <button className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 self-start md:self-auto">
+              <Plus className="w-4 h-4" />
+              <span>Novo Cliente Corporativo</span>
+            </button>
+          </div>
+
+          {/* Search Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                placeholder="Buscar por razão social, nome fantasia, CNPJ..."
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2 text-xs font-bold shrink-0">
+              <span className="text-slate-400 uppercase text-[10px]">FILTRAR:</span>
+              <button className="px-3 py-1.5 bg-purple-600 text-white rounded-lg">Todos</button>
+              <button className="px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg">Ativo</button>
+              <button className="px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg">Inativo</button>
+            </div>
+          </div>
+
+          {/* Master Detail Split */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500 text-xs space-y-2">
+              <Building2 className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="font-bold text-slate-700">Nenhum cliente cadastrado.</p>
+              <p className="text-[11px] text-slate-400">Clique em "Novo Cliente Corporativo" para cadastrar o primeiro cliente.</p>
+            </div>
+
+            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-10 text-center text-slate-400 text-xs space-y-2">
+              <FileText className="w-10 h-10 text-slate-200 mx-auto" />
+              <p className="font-bold text-slate-600">Selecione um cliente para visualizar os detalhes.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: FINANCEIRO */}
+      {subTab === 'financeiro' && (
+        <div className="space-y-6">
+          {/* Financeiro Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xl">💲</span>
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                  Gestão Comercial & Financeiro Headhunter
+                </h1>
+                <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 font-extrabold text-[10px] rounded-full uppercase">
+                  INTEGRADO AO RECRUTAMENTO
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Controle unificado de faturamento de vagas, contas a receber, comissões de consultores, despesas operacionais e garantias contratuais.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2 shrink-0">
+              <button className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5">
+                <Plus className="w-4 h-4" />
+                <span>Lançar Receita</span>
               </button>
-              <button
-                onClick={handleSourceTalent}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl transition"
-              >
-                Confirmar Vinculação
+              <button className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5">
+                <Plus className="w-4 h-4" />
+                <span>Lançar Despesa</span>
               </button>
             </div>
           </div>
+
+          {/* Financeiro Inner Subtabs */}
+          <div className="flex items-center space-x-2 border-b border-slate-200 pb-2 overflow-x-auto text-xs font-bold">
+            {[
+              { id: 'indicadores', label: '⏱ Visão Geral & Indicadores' },
+              { id: 'receitas', label: '📈 Receitas & Faturamento' },
+              { id: 'despesas', label: '📉 Despesas (Vaga & Gerais)' },
+              { id: 'comissoes', label: '👥 Comissões de Consultores' },
+              { id: 'garantias', label: '🛡 Garantias Contratuais' },
+              { id: 'relatorios', label: '📋 Relatórios' }
+            ].map(fTab => (
+              <button
+                key={fTab.id}
+                onClick={() => setFinSubTab(fTab.id as any)}
+                className={`px-3.5 py-2 rounded-xl transition whitespace-nowrap ${
+                  finSubTab === fTab.id
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {fTab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 4 Financeiro KPI Stat Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                RECEITAS FATURADAS
+              </span>
+              <span className="text-2xl font-black text-slate-900 block">R$ 0,00</span>
+              <span className="text-[11px] font-bold text-emerald-600 block">Recebido: R$ 0,00</span>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[10px] font-extrabold text-amber-600 uppercase tracking-wider block">
+                CONTAS A RECEBER (AGUARDANDO)
+              </span>
+              <span className="text-2xl font-black text-amber-600 block">R$ 0,00</span>
+              <span className="text-[11px] text-slate-500 block">Previsto em contrato</span>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[10px] font-extrabold text-rose-600 uppercase tracking-wider block">
+                DESPESAS OPERACIONAIS
+              </span>
+              <span className="text-2xl font-black text-rose-600 block">R$ 0,00</span>
+              <span className="text-[11px] text-slate-500 block">Vagas: R$ 0,00 • Geral: R$ 0,00</span>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[10px] font-extrabold text-purple-600 uppercase tracking-wider block">
+                LUCRO LÍQUIDO ESTIMADO
+              </span>
+              <span className="text-2xl font-black text-purple-600 block">R$ 0,00</span>
+              <span className="text-[11px] text-slate-500 block">Margem Média: 0.0%</span>
+            </div>
+          </div>
+
+          {/* Lower Financial Widgets */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Comissões Widget */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-extrabold text-slate-900 text-sm flex items-center space-x-2">
+                  <Users className="w-4 h-4 text-purple-600" />
+                  <span>👥 Resumo de Comissões</span>
+                </h3>
+                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">0 Registros</span>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between p-2.5 bg-slate-50 rounded-xl font-medium">
+                  <span className="text-slate-600">Total Comissões Previstas</span>
+                  <span className="font-bold text-slate-900">R$ 0,00</span>
+                </div>
+                <div className="flex justify-between p-2.5 bg-emerald-50 rounded-xl text-emerald-900 font-bold">
+                  <span>Comissões Pagas</span>
+                  <span>R$ 0,00</span>
+                </div>
+                <div className="flex justify-between p-2.5 bg-amber-50 rounded-xl text-amber-900 font-bold">
+                  <span>Pendente de Pagamento</span>
+                  <span>R$ 0,00</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Garantias Widget */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-extrabold text-slate-900 text-sm flex items-center space-x-2">
+                  <ShieldCheck className="w-4 h-4 text-purple-600" />
+                  <span>🛡 Status de Garantias</span>
+                </h3>
+                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">0 Total</span>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between p-2.5 bg-emerald-50 rounded-xl text-emerald-900 font-bold">
+                  <span>Garantias Ativas</span>
+                  <span>0</span>
+                </div>
+                <div className="flex justify-between p-2.5 bg-amber-50 rounded-xl text-amber-900 font-bold">
+                  <span>Próximas do Vencimento</span>
+                  <span>0</span>
+                </div>
+                <div className="flex justify-between p-2.5 bg-slate-100 rounded-xl text-slate-700 font-bold">
+                  <span>Encerradas com Sucesso</span>
+                  <span>0</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Top Clientes Widget */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <h3 className="font-extrabold text-slate-900 text-sm flex items-center space-x-2">
+                <TrendingUp className="w-4 h-4 text-purple-600" />
+                <span>📈 Top Clientes por Faturamento</span>
+              </h3>
+              <p className="text-xs text-slate-400">Sem dados de faturamento cadastrados.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: PORTAL DO CLIENTE */}
+      {subTab === 'portal_cliente' && (
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-2xs space-y-4 text-center">
+          <Building2 className="w-12 h-12 text-purple-600 mx-auto" />
+          <h2 className="text-xl font-black text-slate-900">Portal do Cliente Headhunter</h2>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Compartilhe links seguros e relatórios de acompanhamento em tempo real para os clientes acompanharem os processos de seleção sem necessidade de login complexo.
+          </p>
+          <button className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md transition">
+            Gerar Link de Compartilhamento do Cliente
+          </button>
         </div>
       )}
     </div>

@@ -1199,8 +1199,27 @@ class DBManager {
 
   // Candidates & Applications
   public findCandidateByCpf(cpf: string): Candidate | undefined {
+    if (!cpf) return undefined;
     const clean = cpf.replace(/\D/g, '');
-    return this.data.candidates.find(c => c.cpf.replace(/\D/g, '') === clean);
+    if (!clean) return undefined;
+    return this.data.candidates.find(c => c.cpf && c.cpf.replace(/\D/g, '') === clean);
+  }
+
+  public findCandidateByEmailOrPhone(email: string, phone: string, cpf?: string): Candidate | undefined {
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
+    const cleanCpf = cpf ? cpf.replace(/\D/g, '') : '';
+
+    return this.data.candidates.find(c => {
+      const cCpf = c.cpf ? c.cpf.replace(/\D/g, '') : '';
+      const cEmail = c.email ? c.email.trim().toLowerCase() : '';
+      const cPhone = c.phone ? c.phone.replace(/\D/g, '') : '';
+
+      if (cleanCpf && cleanCpf.length === 11 && cCpf === cleanCpf) return true;
+      if (cleanEmail && cEmail === cleanEmail) return true;
+      if (cleanPhone && cleanPhone.length >= 8 && cPhone === cleanPhone) return true;
+      return false;
+    });
   }
 
   public findCandidateById(id: string): Candidate | undefined {
@@ -1324,17 +1343,34 @@ class DBManager {
   }
 
   public getTalentBankCandidates(companyId?: string): Candidate[] {
-    return this.data.candidates.filter(c => c.bancoTalentos);
+    return this.data.candidates.filter(c => c.bancoTalentos !== false);
   }
 
   public getCompanyUsers(): CompanyUser[] {
     return this.data.companyUsers;
   }
 
-  public authenticateUser(email: string): CompanyUser | undefined {
-    return this.data.companyUsers.find(
+  public authenticateUser(email: string, password?: string): CompanyUser | undefined {
+    const user = this.data.companyUsers.find(
       u => u.email.toLowerCase().trim() === email.toLowerCase().trim()
     );
+    if (!user) return undefined;
+    if (user.password && password && user.password !== password) {
+      return undefined;
+    }
+    return user;
+  }
+
+  public saveCompanyUser(user: CompanyUser): CompanyUser {
+    if (!this.data.companyUsers) this.data.companyUsers = [];
+    const idx = this.data.companyUsers.findIndex(u => u.id === user.id);
+    if (idx >= 0) {
+      this.data.companyUsers[idx] = user;
+    } else {
+      this.data.companyUsers.push(user);
+    }
+    this.saveDB();
+    return user;
   }
 
   // --- SAAS PLANS & CONSTRUTOR MASTER ---

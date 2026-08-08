@@ -38,6 +38,21 @@ export default function App() {
   useEffect(() => {
     fetchSettings();
 
+    // Auto login demo user
+    fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'rh@logisticabrasil.com.br' })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.user) {
+          setCurrentUser(data.user);
+          setCurrentCompany(data.company || null);
+        }
+      })
+      .catch(e => console.error('Error auto-logging in:', e));
+
     // Simple path routing checker
     const path = window.location.pathname;
     if (path.startsWith('/vagas/')) {

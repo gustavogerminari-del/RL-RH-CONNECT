@@ -75,8 +75,13 @@ export const TalentBankModal: React.FC<TalentBankModalProps> = ({ onClose, onSuc
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValidCPF(personalData.cpf)) {
-      setCpfError('Informe um CPF válido.');
+    if (!personalData.email || !personalData.phone) {
+      setErrorMessage('E-mail e WhatsApp/Telefone são obrigatórios para o cadastro.');
+      return;
+    }
+
+    if (personalData.cpf && personalData.cpf.replace(/\D/g, '').length === 11 && !isValidCPF(personalData.cpf)) {
+      setCpfError('CPF informado é inválido.');
       return;
     }
 
@@ -167,20 +172,6 @@ export const TalentBankModal: React.FC<TalentBankModalProps> = ({ onClose, onSuc
                     onChange={e => setPersonalData(prev => ({ ...prev, name: e.target.value }))}
                     className="w-full p-2.5 bg-slate-50 border rounded-xl"
                   />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">CPF *</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={14}
-                    placeholder="000.000.000-00"
-                    value={personalData.cpf}
-                    onChange={handleCpfChange}
-                    className="w-full p-2.5 bg-slate-50 border rounded-xl font-mono"
-                  />
-                  {cpfError && <p className="text-[11px] text-rose-600 mt-1">{cpfError}</p>}
                 </div>
 
                 <div>
