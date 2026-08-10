@@ -543,3 +543,91 @@ export interface DocumentItem {
   status: 'valido' | 'proximo_vencimento' | 'vencido';
   uploadedAt: string;
 }
+
+export interface HeadhunterClient {
+  id: string; // CLI-1001
+  companyId: string;
+  // DADOS DA EMPRESA
+  corporateName: string; // Razão Social
+  tradeName: string; // Nome Fantasia
+  cnpj: string;
+  email: string;
+  phone: string;
+  whatsapp?: string;
+  website?: string;
+  // ENDEREÇO
+  zipCode?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  city: string;
+  state: string;
+  // CONTATO
+  contactName: string;
+  contactRole?: string;
+  contactEmail: string;
+  contactPhone: string;
+  contactWhatsapp?: string;
+  // COMERCIAL
+  commercialResponsible?: string;
+  billingType: 'percentual_salario' | 'valor_fixo' | 'percentual_anual' | 'manual';
+  feePercent?: number;
+  fixedFee?: number;
+  paymentDeadline?: string;
+  commercialNotes?: string;
+  // CONTRATO
+  startDate?: string;
+  endDate?: string;
+  status: 'ativo' | 'inativo' | 'em_negociacao';
+  contractNotes?: string;
+  attachments?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HeadhunterFinancialStatus =
+  | 'Aguardando contratação'
+  | 'A faturar'
+  | 'Cobrança gerada'
+  | 'Aguardando pagamento'
+  | 'Pago'
+  | 'Vencido'
+  | 'Cancelado';
+
+export interface HeadhunterFinancial {
+  id: string; // FIN-3001
+  companyId: string;
+  applicationId: string;
+  candidateId: string;
+  candidateName: string;
+  candidateCpf?: string;
+  candidateEmail?: string;
+  candidatePhone?: string;
+  jobId: string;
+  jobTitle: string;
+  clientId: string;
+  clientName: string;
+  recruiterId?: string;
+  recruiterName?: string;
+  contractDate: string;
+  baseSalary: number;
+  billingType: 'percentual_salario' | 'valor_fixo' | 'percentual_anual' | 'manual';
+  feePercent?: number;
+  feeAmount: number; // Valor final da cobrança
+  calculationFormula?: string;
+  dueDate: string;
+  status: HeadhunterFinancialStatus;
+  commercialResponsible?: string;
+  notes?: string;
+  attachments?: string[];
+  history?: Array<{
+    date: string;
+    action: string;
+    user: string;
+    description: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+

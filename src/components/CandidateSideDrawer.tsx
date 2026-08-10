@@ -26,6 +26,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { Application, Candidate, CandidateDocument, Interview, Note, TimelineEvent, Job } from '../types';
+import { FinalizarCandidatoModal } from './FinalizarCandidatoModal';
 
 interface CandidateSideDrawerProps {
   applicationId: string | null;
@@ -59,6 +60,9 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
 
   const [stageOverride, setStageOverride] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+
+  // Finalizar Modal State
+  const [showFinalizarModal, setShowFinalizarModal] = useState(false);
 
   // Evaluation Modal State
   const [showEvalModal, setShowEvalModal] = useState(false);
@@ -157,64 +161,13 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
   const stageName = stageOverride || data?.application?.stage || 'Entrevista Agendada';
 
   // Action handlers
-  const handleEditInterviewClick = async () => {
+  const handleEditInterviewClick = () => {
     setActiveTab('entrevistas');
     setShowEditInterviewModal(true);
-    const newStage = 'entrevista_agendada';
-    setStageOverride(newStage);
-    if (applicationId) {
-      try {
-        await fetch(`/api/company/applications/${applicationId}/stage`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            stage: newStage,
-            companyId,
-            authorName: 'Gestor de RH'
-          })
-        });
-      } catch (e) {
-        console.error('Erro ao editar entrevista:', e);
-      }
-      if (onUpdateStage) {
-        onUpdateStage(applicationId, newStage);
-      }
-    }
-    setFeedbackMessage('Entrevista iniciada. Redirecionando para a Agenda de Entrevistas...');
-    if (onNavigateMenu) {
-      setTimeout(() => {
-        onNavigateMenu('agenda-entrevistas');
-      }, 1000);
-    }
   };
 
-  const handleHire = async () => {
-    const newStage = 'contratado';
-    setStageOverride(newStage);
-    if (applicationId) {
-      try {
-        await fetch(`/api/company/applications/${applicationId}/stage`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            stage: newStage,
-            companyId,
-            authorName: 'Gestor de RH'
-          })
-        });
-      } catch (e) {
-        console.error('Erro ao contratar candidato:', e);
-      }
-      if (onUpdateStage) {
-        onUpdateStage(applicationId, newStage);
-      }
-    }
-    setFeedbackMessage('🎉 Candidato CONTRATADO com sucesso! Redirecionando para Contratações e movendo demais candidatos para o Banco de Talentos...');
-    if (onNavigateMenu) {
-      setTimeout(() => {
-        onNavigateMenu('contratacoes');
-      }, 1000);
-    }
+  const handleHire = () => {
+    setShowFinalizarModal(true);
   };
 
   const handleReject = async () => {
@@ -239,11 +192,6 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
       }
     }
     setFeedbackMessage('Candidato reprovado e direcionado para o Banco de Talentos com sucesso.');
-    if (onNavigateMenu) {
-      setTimeout(() => {
-        onNavigateMenu('banco-de-talentos');
-      }, 1000);
-    }
   };
 
   const handleSaveEvaluation = (e: React.FormEvent) => {
@@ -278,10 +226,33 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
     setFeedbackMessage(`✅ Avaliação registrada com sucesso! Status do candidato atualizado para: ${newStage}`);
   };
 
-  const handleSaveEditInterview = (e: React.FormEvent) => {
+  const handleSaveEditInterview = async (e: React.FormEvent) => {
     e.preventDefault();
     setShowEditInterviewModal(false);
-    setFeedbackMessage('📅 Agendamento de entrevista atualizado com sucesso!');
+    const newStage = 'entrevista_agendada';
+    setStageOverride(newStage);
+
+    if (applicationId) {
+      try {
+        await fetch(`/api/company/applications/${applicationId}/stage`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stage: newStage,
+            companyId,
+            authorName: 'Gestor de RH'
+          })
+        });
+      } catch (e) {
+        console.error('Erro ao salvar agendamento de entrevista:', e);
+      }
+      if (onUpdateStage) {
+        onUpdateStage(applicationId, newStage);
+      }
+    }
+
+    setActiveTab('entrevistas');
+    setFeedbackMessage('📅 Agendamento de entrevista salvo com sucesso! Registrado na área de Entrevistas.');
   };
 
   return (
@@ -775,7 +746,7 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
                   value={evalForm.notes}
                   onChange={e => setEvalForm({ ...evalForm, notes: e.target.value })}
                   placeholder="Escreva seus comentários sobre a entrevista e motivo do parecer..."
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full p-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 text-xs"
                 />
               </div>
 
@@ -811,33 +782,33 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
             <form onSubmit={handleSaveEditInterview} className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Data</label>
+                  <label className="block font-extrabold text-slate-800 mb-1">Data *</label>
                   <input
                     type="date"
                     required
                     value={interviewForm.date}
                     onChange={e => setInterviewForm({ ...interviewForm, date: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-purple-500 text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Horário</label>
+                  <label className="block font-extrabold text-slate-800 mb-1">Horário *</label>
                   <input
                     type="text"
                     required
                     value={interviewForm.time}
                     onChange={e => setInterviewForm({ ...interviewForm, time: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-purple-500 text-xs"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Tipo de Entrevista</label>
+                <label className="block font-extrabold text-slate-800 mb-1">Tipo de Entrevista *</label>
                 <select
                   value={interviewForm.type}
                   onChange={e => setInterviewForm({ ...interviewForm, type: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-purple-500 text-xs"
                 >
                   <option value="Google Meet">Google Meet (Online)</option>
                   <option value="Presencial">Presencial</option>
@@ -846,23 +817,25 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Link da Reunião</label>
+                <label className="block font-extrabold text-slate-800 mb-1">Link da Reunião</label>
                 <input
                   type="text"
                   value={interviewForm.link}
                   onChange={e => setInterviewForm({ ...interviewForm, link: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                  placeholder="https://meet.google.com/..."
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-purple-500 text-xs"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Responsável / Entrevistador</label>
+                <label className="block font-extrabold text-slate-800 mb-1">Responsável / Entrevistador *</label>
                 <input
                   type="text"
                   required
                   value={interviewForm.responsible}
                   onChange={e => setInterviewForm({ ...interviewForm, responsible: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border rounded-xl font-medium"
+                  placeholder="Nome do especialista RH"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-purple-500 text-xs"
                 />
               </div>
 
@@ -884,6 +857,27 @@ export const CandidateSideDrawer: React.FC<CandidateSideDrawerProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Finalizar Processo do Candidato Modal */}
+      {showFinalizarModal && applicationId && data && (
+        <FinalizarCandidatoModal
+          isOpen={showFinalizarModal}
+          onClose={() => setShowFinalizarModal(false)}
+          applicationId={applicationId}
+          candidateName={data.candidate.name}
+          jobTitle={data.job.title}
+          companyName="InovaTech Software"
+          companyId={companyId}
+          jobOrigin={data.job.origin || 'vaga_interna'}
+          clientId={data.job.clientId}
+          clientName={data.job.clientName}
+          onSuccess={(type, message) => {
+            setStageOverride('contratado');
+            if (onUpdateStage) onUpdateStage(applicationId, 'contratado');
+            setFeedbackMessage(message);
+          }}
+        />
       )}
       </div>
     </div>

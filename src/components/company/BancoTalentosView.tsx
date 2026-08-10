@@ -147,9 +147,8 @@ export const BancoTalentosView: React.FC<Props> = ({ companyId }) => {
                 </div>
 
                 <div className="mt-3 space-y-1 text-xs text-slate-600">
-                  <p><strong className="text-slate-800">CPF:</strong> {maskCPFForPrivacy(c.cpf)}</p>
-                  <p><strong className="text-slate-800">Cargo Atual:</strong> {c.currentRole || 'N/I'}</p>
-                  <p><strong className="text-slate-800">Expectativa:</strong> {c.salaryExpectation || 'A combinar'}</p>
+                  <p><strong className="text-slate-800">Cargo / Função:</strong> {c.currentRole || 'N/I'}</p>
+                  <p><strong className="text-slate-800">Pretensão Salarial:</strong> {c.salaryExpectation || 'A combinar'}</p>
                 </div>
 
                 {c.skills && c.skills.length > 0 && (

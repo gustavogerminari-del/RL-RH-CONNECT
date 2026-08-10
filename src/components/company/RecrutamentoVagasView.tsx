@@ -26,8 +26,9 @@ import {
   Award,
   AlertCircle
 } from 'lucide-react';
-import { Job, Application, Candidate } from '../../types';
+import { Job, Application, Candidate, HeadhunterClient } from '../../types';
 import { CandidateSideDrawer } from '../CandidateSideDrawer';
+import { hasModule } from '../../utils/modules';
 
 interface Props {
   companyId: string;
@@ -108,6 +109,39 @@ export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = '
   const [talentSearch, setTalentSearch] = useState('');
   const [addingCandidateId, setAddingCandidateId] = useState<string | null>(null);
 
+  // Company Details and Module Checks
+  const [company, setCompany] = useState<any>(null);
+
+  const fetchCompanyDetails = async () => {
+    try {
+      const res = await fetch(`/api/company/details?companyId=${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCompany(data.company || null);
+      }
+    } catch (e) {
+      console.error('Erro ao buscar empresa:', e);
+    }
+  };
+
+  const hasDPModule = company ? hasModule(company, 'dp') : true;
+  const hasHeadhunterModule = company ? hasModule(company, 'headhunter') : true;
+
+  // Headhunter Clients list for dropdown selection
+  const [headhunterClients, setHeadhunterClients] = useState<HeadhunterClient[]>([]);
+
+  const fetchHeadhunterClients = async () => {
+    try {
+      const res = await fetch(`/api/company/headhunter/clients?companyId=${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHeadhunterClients(data.clients || []);
+      }
+    } catch (e) {
+      console.error('Erro ao buscar clientes headhunter:', e);
+    }
+  };
+
   // Fetch Jobs
   const fetchJobs = async () => {
     setLoading(true);
@@ -126,6 +160,8 @@ export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = '
 
   useEffect(() => {
     fetchJobs();
+    fetchHeadhunterClients();
+    fetchCompanyDetails();
   }, [companyId]);
 
   // Fetch Applications when a job is selected for Candidate Management
@@ -166,6 +202,9 @@ export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = '
   // Open Form for Creating
   const handleOpenCreateForm = () => {
     setEditingJob(null);
+    const initialOrigin = hasDPModule
+      ? 'vaga_interna'
+      : (hasHeadhunterModule ? 'recrutamento_cliente' : 'vaga_interna');
     setJobForm({
       title: '',
       department: '',
@@ -183,7 +222,7 @@ export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = '
       recruiterName: '',
       managerName: '',
       centerCostCode: '',
-      origin: 'vaga_interna',
+      origin: initialOrigin,
       clientName: '',
       clientId: '',
       billingRule: '',
@@ -745,9 +784,10 @@ export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = '
               className="w-full bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs rounded-xl px-3 py-2"
             >
               <option value="todas">Todas as Origens</option>
-              <option value="vaga_interna">Vaga Interna</option>
-              <option value="recrutamento_cliente">Recrutamento p/ Cliente</option>
-              <option value="headhunter">Módulo Headhunter</option>
+              {hasDPModule && <option value="vaga_interna">Vaga Interna</option>}
+              {hasHeadhunterModule && (
+                <option value="recrutamento_cliente">Recrutamento p/ Cliente</option>
+              )}
             </select>
           </div>
         </div>
@@ -1239,9 +1279,12 @@ export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = '
                     onChange={e => setJobForm({ ...jobForm, origin: e.target.value as any })}
                     className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900"
                   >
-                    <option value="vaga_interna">Vaga Interna (Propriedade RL RH)</option>
-                    <option value="recrutamento_cliente">Recrutamento para Cliente</option>
-                    <option value="headhunter">Módulo Headhunter (Busca Ativa)</option>
+                    {hasDPModule && (
+                      <option value="vaga_interna">Vaga Interna (Propriedade RL RH)</option>
+                    )}
+                    {hasHeadhunterModule && (
+                      <option value="recrutamento_cliente">Recrutamento para Cliente</option>
+                    )}
                   </select>
                 </div>
 
@@ -1290,14 +1333,43 @@ export const RecrutamentoVagasView: React.FC<Props> = ({ companyId, userRole = '
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div>
                     <label className="block font-bold text-indigo-900 mb-1">Cliente Contratante *</label>
-                    <input
-                      type="text"
+                    <select
                       required
-                      placeholder="Nome da empresa cliente"
-                      value={jobForm.clientName}
-                      onChange={e => setJobForm({ ...jobForm, clientName: e.target.value })}
-                      className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl"
-                    />
+                      value={jobForm.clientId || ''}
+                      onChange={e => {
+                        const selectedId = e.target.value;
+                        const clientObj = headhunterClients.find(c => c.id === selectedId);
+                        if (clientObj) {
+                          setJobForm({
+                            ...jobForm,
+                            clientId: clientObj.id,
+                            clientName: clientObj.tradeName || clientObj.corporateName,
+                            billingRule:
+                              clientObj.billingType === 'percentual_salario'
+                                ? `${clientObj.feePercent || 15}% do salário`
+                                : clientObj.billingType === 'valor_fixo'
+                                ? `R$ ${(clientObj.fixedFee || 0).toLocaleString('pt-BR')} fixo`
+                                : clientObj.billingType === 'percentual_anual'
+                                ? `${clientObj.feePercent || 15}% do faturamento anual`
+                                : 'Negociado manualmente',
+                            feePercent: String(clientObj.feePercent || 15),
+                            negotiatedValue: String(clientObj.fixedFee || 3500),
+                            paymentDeadline: clientObj.paymentDeadline || '30 dias',
+                            commercialResponsible: clientObj.commercialResponsible || 'Gestor Comercial'
+                          });
+                        } else {
+                          setJobForm({ ...jobForm, clientId: '', clientName: '' });
+                        }
+                      }}
+                      className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl font-bold text-slate-800"
+                    >
+                      <option value="">-- Selecione o Cliente Headhunter --</option>
+                      {headhunterClients.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.tradeName || c.corporateName} {c.cnpj ? `(CNPJ: ${c.cnpj})` : ''}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>

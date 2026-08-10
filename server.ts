@@ -3,6 +3,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { db } from './src/server/db.js';
 import { isValidCPF, cleanCPF } from './src/utils/cpf.js';
+import { hasModule } from './src/utils/modules.js';
 import { extractResumeData, calculateAIFitScore } from './src/server/gemini.js';
 import { Application, Candidate, CandidateDocument, Job, Company, CompanyUser, Subscription } from './src/types.js';
 
@@ -390,6 +391,23 @@ async function startServer() {
     }
 
     const company = db.getCompanyById(companyId);
+    if (!company) {
+      return res.status(404).json({ error: 'Empresa não encontrada.' });
+    }
+
+    const hasHeadhunterModule = hasModule(company, 'headhunter');
+    const requestedOrigin = jobData.origin || 'vaga_interna';
+    const isClientJob = requestedOrigin === 'recrutamento_cliente' || requestedOrigin === 'headhunter';
+
+    // Rule 11: Validation if company does not have Headhunter module
+    if (isClientJob && !hasHeadhunterModule) {
+      return res.status(400).json({ error: 'Esta empresa não possui o módulo Headhunter habilitado.' });
+    }
+
+    // Rule 11: Validation if client job lacks selected client
+    if (isClientJob && (!jobData.clientId || !jobData.clientName || !jobData.clientName.trim())) {
+      return res.status(400).json({ error: 'Selecione um Cliente Corporativo para esta vaga.' });
+    }
 
     const newJob: Job = {
       id: jobData.id || `job-${Date.now()}`,
@@ -791,6 +809,42 @@ async function startServer() {
     res.json({ candidates });
   });
 
+  // ALL CANDIDATES VIEW FOR COMPANY
+  app.get('/api/company/candidates', (req, res) => {
+    const { companyId, search } = req.query;
+    const cid = (companyId as string) || 'c1';
+
+    let candidates = db.getTalentBankCandidates();
+    const allApps = db.getApplicationsByCompany(cid);
+
+    let enriched = candidates.map(c => {
+      const app = allApps.find(a => a.candidateId === c.id);
+      const job = app ? db.getJobById(app.jobId) : null;
+      return {
+        ...c,
+        applicationId: app?.id,
+        jobId: app?.jobId,
+        jobTitle: job ? job.title : 'Banco de Talentos',
+        stage: app ? app.stage : 'banco_de_talentos',
+        appliedAt: app ? app.createdAt : c.createdAt
+      };
+    });
+
+    if (search && typeof search === 'string' && search.trim()) {
+      const q = search.toLowerCase().trim();
+      enriched = enriched.filter(
+        c =>
+          c.name.toLowerCase().includes(q) ||
+          c.city.toLowerCase().includes(q) ||
+          c.jobTitle.toLowerCase().includes(q) ||
+          c.currentRole?.toLowerCase().includes(q) ||
+          c.skills?.some(s => s.toLowerCase().includes(q))
+      );
+    }
+
+    res.json({ candidates: enriched });
+  });
+
   // 3. MASTER PORTAL SETTINGS & SAAS MANAGEMENT
   app.post('/api/master/settings', (req, res) => {
     const { settings } = req.body;
@@ -1165,6 +1219,18 @@ async function startServer() {
   });
 
   // --- COMPANY DASHBOARD METRICS ---
+  app.get('/api/company/details', (req, res) => {
+    const { companyId } = req.query;
+    if (!companyId || typeof companyId !== 'string') {
+      return res.status(400).json({ error: 'companyId é obrigatório.' });
+    }
+    const company = db.getCompanyById(companyId);
+    if (!company) {
+      return res.status(404).json({ error: 'Empresa não encontrada.' });
+    }
+    res.json({ company });
+  });
+
   app.get('/api/company/dashboard', (req, res) => {
     const { companyId } = req.query;
     if (!companyId || typeof companyId !== 'string') {
@@ -1222,6 +1288,140 @@ async function startServer() {
     });
   });
 
+  // Dedicated Hire to DP
+  app.post('/api/company/applications/:id/hire-dp', (req, res) => {
+    const { id } = req.params;
+    const customAdmissionData = req.body || {};
+    const result = db.hireCandidateToEmployee(id, customAdmissionData);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+
+    res.json({
+      success: true,
+      message: 'Candidato enviado para Departamento Pessoal com sucesso.',
+      employee: result.employee
+    });
+  });
+
+  // Dedicated Hire to Headhunter Financial
+  app.post('/api/company/applications/:id/hire-headhunter', (req, res) => {
+    const { id } = req.params;
+    const { recruiterUser, companyId, ...payload } = req.body || {};
+    const targetCompanyId = companyId || payload.companyId;
+    if (targetCompanyId) {
+      const company = db.getCompanyById(targetCompanyId);
+      if (company && !hasModule(company, 'headhunter')) {
+        return res.status(403).json({ error: 'Módulo Headhunter não habilitado para esta empresa.' });
+      }
+    }
+    const result = db.hireHeadhunterCandidate(id, recruiterUser, payload);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+
+    res.json({
+      success: true,
+      message: result.message,
+      financial: result.financial
+    });
+  });
+
+  // --- HEADHUNTER CLIENTS ENDPOINTS ---
+  app.get('/api/company/headhunter/clients', (req, res) => {
+    const { companyId } = req.query;
+    if (companyId && typeof companyId === 'string' && companyId !== 'master') {
+      const company = db.getCompanyById(companyId);
+      if (company && !hasModule(company, 'headhunter')) {
+        return res.json({ clients: [] });
+      }
+    }
+    const clients = db.getHeadhunterClients(companyId as string);
+    res.json({ clients });
+  });
+
+  app.post('/api/company/headhunter/clients', (req, res) => {
+    const clientData = req.body;
+    const companyId = clientData.companyId;
+    if (companyId) {
+      const company = db.getCompanyById(companyId);
+      if (company && !hasModule(company, 'headhunter')) {
+        return res.status(403).json({ error: 'Módulo Headhunter não habilitado para esta empresa.' });
+      }
+    }
+    if (!clientData.tradeName && !clientData.corporateName) {
+      return res.status(400).json({ error: 'Razão Social ou Nome Fantasia é obrigatório.' });
+    }
+    const clientToSave = {
+      ...clientData,
+      id: clientData.id || `CLI-${Math.floor(1000 + Math.random() * 9000)}`,
+      createdAt: clientData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const saved = db.saveHeadhunterClient(clientToSave);
+    res.json({ client: saved, message: 'Cliente Headhunter salvo com sucesso!' });
+  });
+
+  app.delete('/api/company/headhunter/clients/:id', (req, res) => {
+    const { id } = req.params;
+    const { companyId } = req.query;
+    const success = db.deleteHeadhunterClient(id, (companyId as string) || 'master');
+    if (!success) {
+      return res.status(404).json({ error: 'Cliente não encontrado para exclusão.' });
+    }
+    res.json({ success: true, message: 'Cliente excluído com sucesso.' });
+  });
+
+  // --- HEADHUNTER FINANCIAL ENDPOINTS ---
+  app.get('/api/company/headhunter/financial', (req, res) => {
+    const { companyId } = req.query;
+    const financials = db.getHeadhunterFinancials(companyId as string);
+    res.json({ financials });
+  });
+
+  app.post('/api/company/headhunter/financial', (req, res) => {
+    const finData = req.body;
+    if (!finData.companyId || !finData.clientId) {
+      return res.status(400).json({ error: 'companyId e clientId são obrigatórios.' });
+    }
+    const finToSave = {
+      ...finData,
+      id: finData.id || `FIN-${Math.floor(1000 + Math.random() * 9000)}`,
+      createdAt: finData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const saved = db.saveHeadhunterFinancial(finToSave);
+    res.json({ financial: saved, message: 'Lançamento financeiro salvo com sucesso!' });
+  });
+
+  app.patch('/api/company/headhunter/financial/:id/status', (req, res) => {
+    const { id } = req.params;
+    const { status, notes, dueDate, user } = req.body;
+    const fin = db.getHeadhunterFinancialById(id);
+    if (!fin) {
+      return res.status(404).json({ error: 'Lançamento financeiro não encontrado.' });
+    }
+
+    const oldStatus = fin.status;
+    fin.status = status || fin.status;
+    if (notes) fin.notes = notes;
+    if (dueDate) fin.dueDate = dueDate;
+    fin.updatedAt = new Date().toISOString();
+
+    if (!fin.history) fin.history = [];
+    fin.history.unshift({
+      date: new Date().toISOString(),
+      action: `Status alterado de "${oldStatus}" para "${fin.status}"`,
+      user: user || 'Gestor Financeiro',
+      description: notes || `Atualização de status financeiro.`
+    });
+
+    const saved = db.saveHeadhunterFinancial(fin);
+    res.json({ financial: saved, message: `Status atualizado para "${saved.status}"` });
+  });
+
   app.get('/api/company/contratacoes', (req, res) => {
     const { companyId } = req.query;
     const cid = (companyId as string) || 'c1';
@@ -1232,6 +1432,7 @@ async function startServer() {
     const list = hiredApps.map(a => {
       const candidate = db.findCandidateById(a.candidateId);
       const job = db.getJobById(a.jobId);
+      const fin = (db.getHeadhunterFinancials(cid) || []).find(f => f.applicationId === a.id);
 
       return {
         id: `contratacao-${a.id}`,
@@ -1239,13 +1440,13 @@ async function startServer() {
         candidateName: candidate ? candidate.name : 'Candidato Contratado',
         jobTitle: job ? job.title : 'Vaga Contratada',
         date: new Date(a.updatedAt || a.createdAt || Date.now()).toLocaleDateString('pt-BR'),
-        destination: 'Financeiro / Headhunter',
+        destination: job?.origin === 'vaga_interna' ? 'Departamento Pessoal (DP)' : 'Financeiro / Headhunter',
         statusProcesso: 'Contratação Concluída',
         remuneration: job && job.salaryMin ? `R$ ${job.salaryMin.toLocaleString('pt-BR')}` : 'R$ 5.200,00',
         salaryAmount: job && job.salaryMin ? `R$ ${job.salaryMin.toLocaleString('pt-BR')}` : 'R$ 5.200,00',
-        honorariosAmount: job && job.salaryMin ? `R$ ${(job.salaryMin * 2).toLocaleString('pt-BR')}` : 'R$ 10.400,00',
-        clientName: 'Logística Express S.A.',
-        sentToHeadhunter: false
+        honorariosAmount: fin ? `R$ ${fin.feeAmount.toLocaleString('pt-BR')}` : (job && job.salaryMin ? `R$ ${(job.salaryMin * 0.15).toLocaleString('pt-BR')}` : 'R$ 10.400,00'),
+        clientName: fin?.clientName || job?.clientName || 'Empresa Cliente',
+        sentToHeadhunter: job?.origin !== 'vaga_interna'
       };
     });
 

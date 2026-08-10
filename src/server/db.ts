@@ -22,7 +22,9 @@ import {
   TimeClockEntry,
   PayrollRecord,
   BenefitItem,
-  DocumentItem
+  DocumentItem,
+  HeadhunterClient,
+  HeadhunterFinancial
 } from '../types.js';
 
 interface DBData {
@@ -48,6 +50,8 @@ interface DBData {
   payrolls: PayrollRecord[];
   benefits: BenefitItem[];
   centralDocuments: DocumentItem[];
+  headhunterClients: HeadhunterClient[];
+  headhunterFinancials: HeadhunterFinancial[];
 }
 
 const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
@@ -344,6 +348,7 @@ const INITIAL_DATA: DBData = {
       state: 'SP',
       description: 'Líder em transporte rodoviário de cargas e soluções logísticas em todo o território nacional.',
       active: true,
+      modules: ['vagas', 'candidatos', 'headhunter', 'banco-de-talentos', 'agenda-entrevistas', 'contratacoes', 'relatorios', 'ia-rh'],
       createdAt: new Date().toISOString()
     },
     {
@@ -356,6 +361,7 @@ const INITIAL_DATA: DBData = {
       state: 'SC',
       description: 'Empresa de tecnologia especializada em desenvolvimento de software em nuvem e inteligência artificial.',
       active: true,
+      modules: ['vagas', 'candidatos', 'banco-de-talentos', 'agenda-entrevistas', 'contratacoes', 'funcionarios', 'admissoes', 'ponto-digital', 'folha-de-pagamento', 'beneficios', 'ferias', 'central-documentos', 'relatorios', 'ia-rh'],
       createdAt: new Date().toISOString()
     },
     {
@@ -368,6 +374,7 @@ const INITIAL_DATA: DBData = {
       state: 'PR',
       description: 'Complexo hospitalar de referência focado em saúde humanizada e atendimento de alta complexidade.',
       active: true,
+      modules: ['funcionarios', 'admissoes', 'ponto-digital', 'folha-de-pagamento', 'beneficios', 'ferias', 'sst', 'central-documentos', 'relatorios'],
       createdAt: new Date().toISOString()
     }
   ],
@@ -1093,7 +1100,54 @@ const INITIAL_DATA: DBData = {
       status: 'proximo_vencimento',
       uploadedAt: '2025-06-01T08:35:00Z'
     }
-  ]
+  ],
+  headhunterClients: [
+    {
+      id: 'CLI-1001',
+      companyId: 'comp-01',
+      corporateName: 'Logística Express Serviços Logísticos S.A.',
+      tradeName: 'Logística Express',
+      cnpj: '00.000.000/0001-00',
+      email: 'contato@logisticaexpress.com.br',
+      phone: '(11) 3344-5566',
+      city: 'São Paulo',
+      state: 'SP',
+      contactName: 'Carlos Silva',
+      contactEmail: 'carlos@logisticaexpress.com.br',
+      contactPhone: '(11) 98877-6655',
+      commercialResponsible: 'Carlos Silva',
+      billingType: 'percentual_salario',
+      feePercent: 200,
+      fixedFee: 3500,
+      paymentDeadline: '30 dias',
+      status: 'ativo',
+      createdAt: '2026-01-15T10:00:00Z',
+      updatedAt: '2026-01-15T10:00:00Z'
+    },
+    {
+      id: 'CLI-1002',
+      companyId: 'comp-01',
+      corporateName: 'Tech Solutions Indústria e Comércio Ltda.',
+      tradeName: 'Tech Solutions',
+      cnpj: '11.222.333/0001-99',
+      email: 'financeiro@techsolutions.com.br',
+      phone: '(11) 4004-9988',
+      city: 'Campinas',
+      state: 'SP',
+      contactName: 'Mariana Santos',
+      contactEmail: 'mariana@techsolutions.com.br',
+      contactPhone: '(19) 99123-4567',
+      commercialResponsible: 'Mariana Santos',
+      billingType: 'valor_fixo',
+      feePercent: 15,
+      fixedFee: 3500,
+      paymentDeadline: '15 dias',
+      status: 'ativo',
+      createdAt: '2026-02-01T10:00:00Z',
+      updatedAt: '2026-02-01T10:00:00Z'
+    }
+  ],
+  headhunterFinancials: []
 };
 
 class DBManager {
@@ -1601,6 +1655,39 @@ class DBManager {
     return emp;
   }
 
+  // AUTOMATIC FLOW: When a candidate is hired, automatically move all other unselected candidates for that job to Banco de Talentos
+  private autoMoveOtherCandidatesToTalentBank(jobId: string, hiredApplicationId: string): void {
+    if (!jobId) return;
+    const otherApps = (this.data.applications || []).filter(
+      a => a.jobId === jobId && a.id !== hiredApplicationId
+    );
+
+    otherApps.forEach(a => {
+      const stageStr = String(a.stage || '').toLowerCase();
+      if (!stageStr.includes('contratad') && !stageStr.includes('banco')) {
+        a.stage = 'banco_de_talentos' as any;
+        a.status = 'finalizada';
+        a.updatedAt = new Date().toISOString();
+        this.saveApplication(a);
+
+        const candidate = this.findCandidateById(a.candidateId);
+        if (candidate) {
+          candidate.bancoTalentos = true;
+          this.saveCandidate(candidate);
+        }
+
+        this.addTimelineEvent({
+          id: `tl-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          applicationId: a.id,
+          title: 'Redirecionado ao Banco de Talentos',
+          description: 'Processo encerrado devido à contratação de outro candidato para a vaga. Perfil mantido no Banco de Talentos.',
+          author: 'Sistema ATS',
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+  }
+
   // REGRAS DE INTEGRAÇÃO: Contratação de Candidato -> Promove para Funcionário no DP (Sem duplicidade)
   public hireCandidateToEmployee(applicationId: string, customAdmissionData?: Partial<Employee>): { success: boolean; employee?: Employee; message: string } {
     const app = this.data.applications.find(a => a.id === applicationId);
@@ -1614,6 +1701,12 @@ class DBManager {
     // Update application stage to contratado
     app.stage = 'contratado';
     app.updatedAt = new Date().toISOString();
+    this.saveApplication(app);
+
+    // Auto-move unselected candidates to Talent Bank
+    if (app.jobId) {
+      this.autoMoveOtherCandidatesToTalentBank(app.jobId, app.id);
+    }
 
     // Check if candidate is already registered as an employee for this company
     let employee = (this.data.employees || []).find(e => e.cpf === candidate.cpf && e.companyId === app.companyId);
@@ -1884,29 +1977,258 @@ class DBManager {
     const point = this.getTimeClockEntries(companyId);
     const payrolls = this.getPayrolls(companyId);
     const benefits = this.getBenefits(companyId);
+    const hhClients = this.getHeadhunterClients(companyId);
+    const hhFinancials = this.getHeadhunterFinancials(companyId);
 
     const activeEmployees = emp.filter(e => e.status === 'ativo').length;
-    const openJobs = jobs.filter(j => j.status === 'aberta').length;
+    const openJobs = jobs.filter(j => j.status === 'aberta' && j.origin === 'vaga_interna').length;
+    const clientJobsCount = jobs.filter(j => j.status === 'aberta' && (j.origin === 'recrutamento_cliente' || j.origin === 'headhunter')).length;
     const totalCandidates = apps.length;
     const pendingInterviews = interviews.filter(i => i.status === 'agendada').length;
     const scheduledVacations = vacations.filter(v => v.status === 'programada' || v.status === 'em_andamento').length;
 
     const totalPayrollAmount = payrolls.reduce((acc, p) => acc + (p.netSalary || 0), 0);
 
+    const toInvoiceAmount = hhFinancials
+      .filter(f => f.status === 'A faturar')
+      .reduce((acc, f) => acc + (f.feeAmount || 0), 0);
+
+    const toReceiveAmount = hhFinancials
+      .filter(f => f.status === 'Cobrança gerada' || f.status === 'Aguardando pagamento' || f.status === 'Pago')
+      .reduce((acc, f) => acc + (f.feeAmount || 0), 0);
+
+    const activeClients = hhClients.filter(c => c.status === 'ativo').length;
+
     return {
       activeEmployees,
-      openJobs,
+      openJobs: jobs.filter(j => j.status === 'aberta').length,
+      internalOpenJobs: openJobs,
+      clientJobsCount,
+      activeClients,
       totalCandidates,
       pendingInterviews,
       scheduledVacations,
       pointEntriesToday: point.length,
       totalPayrollAmount,
       totalBenefitsCount: benefits.length,
+      toInvoiceAmount,
+      toReceiveAmount,
+      headhunterHiredMonth: hhFinancials.length,
       alerts: [
         scheduledVacations > 0 ? `${scheduledVacations} colaboradores com férias programadas/em andamento.` : null,
         pendingInterviews > 0 ? `${pendingInterviews} entrevistas agendadas na fila.` : null,
         openJobs > 0 ? `${openJobs} vagas abertas com candidaturas em triagem.` : null
       ].filter(Boolean)
+    };
+  }
+
+  // --- 13. HEADHUNTER CLIENTS & FINANCIAL ---
+  public getHeadhunterClients(companyId?: string): HeadhunterClient[] {
+    const list = this.data.headhunterClients || [];
+    if (!companyId || companyId === 'master') return list;
+    return list.filter(c => c.companyId === companyId);
+  }
+
+  public getHeadhunterClientById(id: string): HeadhunterClient | undefined {
+    return (this.data.headhunterClients || []).find(c => c.id === id);
+  }
+
+  public saveHeadhunterClient(client: HeadhunterClient): HeadhunterClient {
+    if (!this.data.headhunterClients) this.data.headhunterClients = [];
+    const idx = this.data.headhunterClients.findIndex(c => c.id === client.id);
+    if (idx >= 0) {
+      this.data.headhunterClients[idx] = { ...client, updatedAt: new Date().toISOString() };
+    } else {
+      this.data.headhunterClients.push(client);
+    }
+    this.saveDB();
+    return client;
+  }
+
+  public deleteHeadhunterClient(id: string, companyId: string): boolean {
+    if (!this.data.headhunterClients) return false;
+    const idx = this.data.headhunterClients.findIndex(
+      c => c.id === id && (companyId === 'master' || c.companyId === companyId)
+    );
+    if (idx >= 0) {
+      this.data.headhunterClients.splice(idx, 1);
+      this.saveDB();
+      return true;
+    }
+    return false;
+  }
+
+  public getHeadhunterFinancials(companyId?: string): HeadhunterFinancial[] {
+    const list = this.data.headhunterFinancials || [];
+    if (!companyId || companyId === 'master') return list;
+    return list.filter(f => f.companyId === companyId);
+  }
+
+  public getHeadhunterFinancialById(id: string): HeadhunterFinancial | undefined {
+    return (this.data.headhunterFinancials || []).find(f => f.id === id);
+  }
+
+  public saveHeadhunterFinancial(fin: HeadhunterFinancial): HeadhunterFinancial {
+    if (!this.data.headhunterFinancials) this.data.headhunterFinancials = [];
+    const idx = this.data.headhunterFinancials.findIndex(f => f.id === fin.id);
+    if (idx >= 0) {
+      this.data.headhunterFinancials[idx] = { ...fin, updatedAt: new Date().toISOString() };
+    } else {
+      this.data.headhunterFinancials.push(fin);
+    }
+    this.saveDB();
+    return fin;
+  }
+
+  public hireHeadhunterCandidate(
+    applicationId: string,
+    recruiterUser?: { id?: string; name?: string },
+    payload?: {
+      clientId?: string;
+      clientName?: string;
+      salary?: number;
+      headhunterFee?: number;
+      billingRule?: string;
+      feePercent?: number;
+      commercialResponsible?: string;
+      closingDate?: string;
+      notes?: string;
+      companyId?: string;
+    }
+  ): { success: boolean; financial?: HeadhunterFinancial; message: string } {
+    const app = this.data.applications.find(a => a.id === applicationId);
+    if (!app) return { success: false, message: 'Candidatura não encontrada.' };
+
+    const candidate = this.findCandidateById(app.candidateId);
+    if (!candidate) return { success: false, message: 'Candidato não encontrado.' };
+
+    const job = this.getJobById(app.jobId);
+    if (!job) return { success: false, message: 'Vaga não encontrada.' };
+
+    // Prevent Duplication: Check if financial record already exists for this applicationId
+    const existingFin = (this.data.headhunterFinancials || []).find(f => f.applicationId === applicationId);
+    if (existingFin) {
+      return {
+        success: false,
+        message: 'Esta contratação já possui um lançamento no Financeiro Headhunter.'
+      };
+    }
+
+    // Determine Client
+    let client = payload?.clientId ? this.getHeadhunterClientById(payload.clientId) : undefined;
+    if (!client && job.clientId) {
+      client = this.getHeadhunterClientById(job.clientId);
+    }
+
+    const clientId = payload?.clientId || client?.id || job.clientId;
+    if (!clientId) {
+      return {
+        success: false,
+        message: 'Selecione o Cliente Corporativo responsável por esta contratação.'
+      };
+    }
+
+    const clientName = payload?.clientName || client?.tradeName || client?.corporateName || job.clientName || 'Cliente Headhunter';
+
+    // Update application stage
+    app.stage = 'contratado';
+    app.status = 'finalizada';
+    app.updatedAt = new Date().toISOString();
+    this.saveApplication(app);
+
+    // Auto-move unselected candidates to Talent Bank
+    if (app.jobId) {
+      this.autoMoveOtherCandidatesToTalentBank(app.jobId, app.id);
+    }
+
+    const salary = payload?.salary ?? job.salaryMin ?? 6500;
+    const feePercent = payload?.feePercent ?? client?.feePercent ?? 100;
+    const fixedFee = client?.fixedFee ?? 3500;
+    const billingType = (payload?.billingRule || client?.billingType || 'percentual_salario') as 'percentual_salario' | 'valor_fixo' | 'percentual_anual' | 'manual';
+
+    let feeAmount = payload?.headhunterFee;
+    if (feeAmount === undefined || feeAmount === null) {
+      if (billingType === 'percentual_salario') {
+        feeAmount = Math.round((salary * feePercent) / 100);
+      } else if (billingType === 'valor_fixo') {
+        feeAmount = fixedFee;
+      } else if (billingType === 'percentual_anual') {
+        feeAmount = Math.round((salary * 12 * feePercent) / 100);
+      } else {
+        feeAmount = 4000;
+      }
+    }
+
+    let formulaStr = '';
+    if (billingType === 'percentual_salario') {
+      formulaStr = `${feePercent}% sobre salário mensal (R$ ${salary.toLocaleString('pt-BR')})`;
+    } else if (billingType === 'valor_fixo') {
+      formulaStr = `Valor fixo de R$ ${fixedFee.toLocaleString('pt-BR')}`;
+    } else if (billingType === 'percentual_anual') {
+      formulaStr = `${feePercent}% sobre salário anual (R$ ${salary.toLocaleString('pt-BR')})`;
+    } else {
+      formulaStr = `Valor de honorários negociado: R$ ${feeAmount.toLocaleString('pt-BR')}`;
+    }
+
+    // Calculate due date (default 30 days from now)
+    const dueDays = parseInt((client?.paymentDeadline || '30').replace(/\D/g, '')) || 30;
+    const dueDateObj = new Date(Date.now() + dueDays * 24 * 3600 * 1000);
+    const dueDateStr = dueDateObj.toISOString().slice(0, 10);
+
+    const contractDate = payload?.closingDate || new Date().toISOString().slice(0, 10);
+
+    const newFin: HeadhunterFinancial = {
+      id: `FIN-${Math.floor(1000 + Math.random() * 9000)}`,
+      companyId: payload?.companyId || app.companyId,
+      applicationId: app.id,
+      candidateId: candidate.id,
+      candidateName: candidate.name,
+      candidateCpf: candidate.cpf,
+      candidateEmail: candidate.email,
+      candidatePhone: candidate.phone,
+      jobId: job.id,
+      jobTitle: job.title,
+      clientId,
+      clientName,
+      recruiterId: recruiterUser?.id || job.recruiterId || 'rec-1',
+      recruiterName: recruiterUser?.name || job.recruiterName || 'Recrutador Responsável',
+      contractDate,
+      baseSalary: salary,
+      billingType,
+      feePercent,
+      feeAmount,
+      calculationFormula: formulaStr,
+      dueDate: dueDateStr,
+      status: 'A faturar',
+      commercialResponsible: payload?.commercialResponsible || client?.commercialResponsible || job.commercialResponsible || 'Gestor Comercial',
+      history: [
+        {
+          date: new Date().toISOString(),
+          action: 'Contratação Headhunter Registrada',
+          user: recruiterUser?.name || 'Sistema RL Connect',
+          description: `Candidato ${candidate.name} contratado para a vaga ${job.title} no cliente ${clientName}. Lançamento financeiro no valor de R$ ${feeAmount.toLocaleString('pt-BR')} criado com status 'A faturar'.`
+        }
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    this.saveHeadhunterFinancial(newFin);
+
+    // Add Timeline event
+    this.addTimelineEvent({
+      id: `tl-${Date.now()}`,
+      applicationId: app.id,
+      title: 'Contratação Headhunter Realizada',
+      description: `Contratação concluída para a empresa cliente ${clientName}. Gerado faturamento no valor de R$ ${feeAmount.toLocaleString('pt-BR')} (ID Financeiro: ${newFin.id}).`,
+      author: 'Módulo Headhunter',
+      timestamp: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      financial: newFin,
+      message: 'Contratação concluída e enviada para o Financeiro Headhunter.'
     };
   }
 }
